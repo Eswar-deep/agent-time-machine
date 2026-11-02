@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Simulator files are checked against upstream byte hashes.
+vendor/tau2/** -text

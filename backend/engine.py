@@ -1,0 +1,276 @@
+import json
+import time
+from uuid import uuid4
+
+from .agent import demo_final, next_demo_action
+from .checkpoints import capture, restore
+from .environment import POLICY, RetailEnvironment, compatibility
+from .evaluator import evaluate
+from .jsonutil import canonical, clone, digest, now, state_diff
+from .models import MetaClient, ModelFailure, aggregate_usage, bounded_integer, meta_status
+from .scenarios import initial_state, scenario
+from .store import Store
+
+
+class Engine:
+    def __init__(self, store: Store):
+        self.store = store
+
+    def _agent_config(self, kind):
+        config = {"kind": kind, "model": None}
+        if kind == "live_meta":
+            status = meta_status()
+            config.update({"model": status["model"], "base_url": status["base_url"],
+                           "max_calls": status["max_calls"], "max_output_tokens": status["max_output_tokens"],
+                           "timeout_seconds": bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 30, 1, 60)})
+        return config
+
+    def _new_run(self, scenario_id, mode, parent_id=None):
+        task = scenario(scenario_id)
+        return {"id": "run_" + uuid4().hex, "parent_id": parent_id, "fork_checkpoint_id": None,
+                "created_at": now(), "scenario_id": scenario_id, "title": task["title"], "mode": mode,
+                "injected_failure": False, "execution": "running", "error": None, "patch": None,
+                "events": [], "checkpoints": [], "model_calls": [], "replay": None,
+                "compatibility": compatibility(), "elapsed_ms": 0}
+
+    def _event(self, run, kind, **data):
+        event = {"id": "evt_" + uuid4().hex, "seq": len(run["events"]), "kind": kind,
+                 "timestamp": now(), "inherited": False, **clone(data)}
+        run["events"].append(event)
+        return event
+
+    def create(self, scenario_id: str, mode: str = "deterministic_demo") -> dict:
+        if mode not in ("deterministic_demo", "live_meta"):
+            raise ValueError("Choose deterministic_demo or live_meta.")
+        if mode == "live_meta" and not meta_status()["available"]:
+            raise ModelFailure("Live Meta is unavailable. " + " ".join(meta_status()["blockers"]))
+        run = self._new_run(scenario_id, mode)
+        environment = RetailEnvironment(initial_state())
+        run["initial_state"] = environment.snapshot()
+        run["injected_failure"] = mode == "deterministic_demo"
+        task = scenario(scenario_id)
+        messages = [{"role": "developer", "content": POLICY}, {"role": "user", "content": task["request"]}]
+        self._event(run, "user_message", content=task["request"], source="scenario")
+        agent_state = {"cursor": 0, "inject_failure": mode == "deterministic_demo", "injection_consumed": False}
+        config = self._agent_config(mode)
+        return self._drive(run, environment, messages, agent_state, config)
+
+    def checkpoint(self, checkpoint_id: str) -> dict:
+        checkpoint = self.store.checkpoint(checkpoint_id)
+        restore(checkpoint)
+        return checkpoint
+
+    def _tool(self, run, environment, messages, state, config, pending, checkpoints, decision_source=None):
+        pending = environment.validate(pending)
+        checkpoint = capture(run, environment, messages, pending, state, config, len(run["events"]))
+        checkpoints.append(checkpoint)
+        run["checkpoints"].append({"id": checkpoint["id"], "sha256": checkpoint["sha256"],
+                                   "event_boundary": len(run["events"]), "tool": pending["tool"],
+                                   "step": state["cursor"] + 1})
+        call_id = "tool_" + uuid4().hex
+        assistant = {"role": "assistant", "content": None, "tool_calls": [{
+            "id": call_id, "type": "function", "function": {
+                "name": pending["tool"], "arguments": canonical(pending["arguments"])}}]}
+        messages.append(assistant)
+        started = time.perf_counter()
+        observation = environment.execute(pending)
+        self._event(run, "tool", **pending, observation=observation, checkpoint_id=checkpoint["id"],
+                    source=config["kind"], decision_source=decision_source or config["kind"],
+                    latency_ms=round((time.perf_counter() - started) * 1000, 2))
+        messages.append({"role": "tool", "tool_call_id": call_id, "content": canonical(observation)})
+        state["cursor"] += 1
+        if not observation["ok"]:
+            raise RuntimeError(observation["error"]["message"])
+
+    def _drive(self, run, environment, messages, state, config, first_action=None, proposal_calls=None):
+        checkpoints = []
+        started = time.perf_counter()
+        own_calls = list(proposal_calls or [])
+        try:
+            if first_action is not None:
+                self._tool(run, environment, messages, state, config, first_action, checkpoints,
+                           decision_source=run["patch"]["provenance"]["kind"])
+            for _ in range(12):
+                if config["kind"] == "deterministic_demo":
+                    action = next_demo_action(run["scenario_id"], state, messages)
+                    if action is None:
+                        final = demo_final(messages)
+                        messages.append({"role": "assistant", "content": final})
+                        self._event(run, "agent_message", content=final, source="deterministic_demo")
+                        run["execution"] = "completed"
+                        break
+                else:
+                    message, call = MetaClient(self.store).complete(
+                        messages, environment.schemas(), run["id"], "continuation", len(own_calls))
+                    own_calls.append(call)
+                    self._event(run, "model_call", model=call["model"], request_hash=call["request_hash"],
+                                usage=call["usage"], latency_ms=call["latency_ms"], source="live_meta")
+                    tool_calls = message.get("tool_calls", [])
+                    if not tool_calls:
+                        if not message.get("content"):
+                            raise ModelFailure("Meta returned neither a tool action nor a final message.")
+                        messages.append(message)
+                        self._event(run, "agent_message", content=message["content"], source="live_meta")
+                        run["execution"] = "completed"
+                        break
+                    if len(tool_calls) != 1 or message.get("content"):
+                        raise ModelFailure("This checkpoint format supports one tool action per turn and no simultaneous text.")
+                    function = tool_calls[0]["function"]
+                    action = {"tool": function["name"], "arguments": json.loads(function["arguments"])}
+                self._tool(run, environment, messages, state, config, action, checkpoints)
+            else:
+                raise RuntimeError("Step allowance exhausted. Run is incomplete.")
+        except Exception as error:
+            run["execution"] = "failed"
+            run["error"] = str(error)
+            self._event(run, "execution_error", content=str(error), source=config["kind"])
+            # Failed calls were logged immediately, even if no message returned.
+            own_calls = list(proposal_calls or []) + [c for c in self.store.calls() if c["run_id"] == run["id"]
+                                                      and c["purpose"] == "continuation"]
+        run["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        run["final_state"] = environment.snapshot()
+        run["conversation"] = clone(messages)
+        run["model_calls"] = clone(own_calls)
+        run["usage"] = aggregate_usage(own_calls)
+        run["outcome"] = evaluate(run["scenario_id"], run["initial_state"], run["final_state"], run["events"], run["execution"])
+        run["state_changes"] = state_diff(run["initial_state"], run["final_state"])
+        self.store.save_run(run, checkpoints)
+        return run
+
+    def branch(self, run_id: str, checkpoint_id: str, action: dict, continuation: str | None = None,
+               proposal_id: str | None = None) -> dict:
+        parent = self.store.run(run_id)
+        checkpoint = self.store.checkpoint(checkpoint_id)
+        if checkpoint["run_id"] != run_id:
+            raise ValueError("This checkpoint belongs to another run. Select a checkpoint in the current run.")
+        environment, payload = restore(checkpoint)
+        action = environment.validate(action)
+        kind = continuation or payload["agent_config"]["kind"]
+        if kind not in ("deterministic_demo", "live_meta"):
+            raise ValueError("Unsupported continuation mode.")
+        if payload["agent_config"]["kind"] == "live_meta" and kind != "live_meta":
+            raise ValueError("A live-agent checkpoint requires a fresh live continuation.")
+        if kind == "live_meta":
+            if not meta_status()["available"]:
+                raise ModelFailure("Live continuation is unavailable. " + " ".join(meta_status()["blockers"]))
+            if (payload["agent_config"]["kind"] == "live_meta"
+                    and payload["agent_config"] != self._agent_config(kind)):
+                raise ValueError("Live model configuration changed. Restore the original model, endpoint, and bounds or record a new run.")
+        proposal_calls = []
+        provenance = {"kind": "manual", "failed_trace_access": False}
+        if proposal_id:
+            proposal = self.store.proposal(proposal_id)
+            if (proposal["run_id"] != run_id or proposal["checkpoint_id"] != checkpoint_id
+                    or proposal["status"] != "ready" or proposal["action"] != action):
+                raise ValueError("Proposal does not match this action and checkpoint. Execute edited arguments as a manual patch.")
+            if kind != "live_meta":
+                raise ValueError("Meta proposals require a fresh live continuation.")
+            proposal_calls = proposal["model_calls"]
+            provenance = {"kind": "meta_proposal", "proposal_id": proposal_id, "failed_trace_access": True}
+        run = self._new_run(parent["scenario_id"], kind, parent_id=run_id)
+        run["parent_sha256"] = digest(parent)
+        run["fork_checkpoint_id"] = checkpoint_id
+        run["initial_state"] = clone(parent["initial_state"])
+        run["fork_state"] = environment.snapshot()
+        run["injected_failure"] = parent["injected_failure"]
+        run["patch"] = {"before": payload["pending_action"], "after": action, "provenance": provenance,
+                        "continuation": kind, "context_rule": "Only the conversation before this checkpoint is restored."}
+        run["events"] = [{**clone(event), "inherited": True, "checkpoint_id": None}
+                         for event in parent["events"][:payload["event_boundary"]]]
+        config = self._agent_config(kind)
+        return self._drive(run, environment, payload["conversation"], payload["agent_state"],
+                           config, first_action=action, proposal_calls=proposal_calls)
+
+    def replay(self, run_id: str) -> dict:
+        parent = self.store.run(run_id)
+        if parent["compatibility"] != compatibility():
+            raise ValueError("Incompatible saved run. Record a new run before replaying with the current simulator.")
+        run = self._new_run(parent["scenario_id"], "unchanged_replay", run_id)
+        run["parent_sha256"] = digest(parent)
+        environment = RetailEnvironment(parent["initial_state"])
+        run["initial_state"] = environment.snapshot()
+        run["injected_failure"] = parent["injected_failure"]
+        started = time.perf_counter()
+        mismatches = []
+        tool_errors = 0
+        for event in parent["events"]:
+            if event["kind"] == "tool":
+                action = {"tool": event["tool"], "arguments": event["arguments"]}
+                tool_started = time.perf_counter()
+                observation = environment.execute(action)
+                self._event(run, "tool", **action, observation=observation, source="unchanged_replay",
+                            latency_ms=round((time.perf_counter() - tool_started) * 1000, 2), checkpoint_id=None)
+                if observation != event["observation"]:
+                    mismatches.append({"event_seq": event["seq"], "tool": event["tool"],
+                                       "differences": state_diff(event["observation"], observation)})
+                tool_errors += not observation["ok"]
+            elif event["kind"] in ("user_message", "agent_message"):
+                self._event(run, event["kind"], content=event["content"], source="recorded_playback")
+        run["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        run["final_state"] = environment.snapshot()
+        state_matches = run["final_state"] == parent["final_state"]
+        matches = not mismatches and state_matches
+        run["execution"] = "completed" if matches and not tool_errors else "failed"
+        run["error"] = None if run["execution"] == "completed" else (
+            "Replay reproduced recorded tool error(s)." if matches else "Replay observations or final state did not match.")
+        run["replay"] = {"status": "matched" if matches else "mismatch", "observations_match": not mismatches,
+                         "state_match": state_matches, "mismatches": mismatches,
+                         "tool_errors": tool_errors, "all_tool_calls_reexecuted": True}
+        run["conversation"] = []
+        run["usage"] = aggregate_usage([])
+        run["outcome"] = {"status": "not_evaluated", "passed": 0, "total": 0, "checks": [],
+                          "scope": "Tool replay checks observations/state only. Messages are recorded playback, not fresh model output."}
+        run["state_changes"] = state_diff(run["initial_state"], run["final_state"])
+        self.store.save_run(run, [])
+        return run
+
+    def compare(self, branch_id: str) -> dict:
+        branch = self.store.run(branch_id)
+        if not branch["parent_id"]:
+            raise ValueError("Select a branch to compare with its parent.")
+        parent = self.store.run(branch["parent_id"])
+        return {"parent_id": parent["id"], "branch_id": branch_id, "patch": branch["patch"],
+                "parent_sha256": digest(parent), "original_unchanged": branch.get("parent_sha256") == digest(parent),
+                "state_diff": state_diff(parent["final_state"], branch["final_state"]),
+                "parent_outcome": parent["outcome"], "branch_outcome": branch["outcome"],
+                "parent_usage": parent["usage"], "branch_usage": branch["usage"],
+                "parent_elapsed_ms": parent["elapsed_ms"], "branch_elapsed_ms": branch["elapsed_ms"],
+                "scope": "An intervention result in this sandbox; not a unique root-cause diagnosis."}
+
+    def propose(self, run_id: str, checkpoint_id: str) -> dict:
+        parent = self.store.run(run_id)
+        checkpoint = self.store.checkpoint(checkpoint_id)
+        if checkpoint["run_id"] != run_id:
+            raise ValueError("Checkpoint belongs to another run.")
+        environment, payload = restore(checkpoint)
+        if not meta_status()["available"]:
+            raise ModelFailure("Meta proposals are unavailable. " + " ".join(meta_status()["blockers"]))
+        proposal = {"id": "proposal_" + uuid4().hex, "run_id": run_id, "checkpoint_id": checkpoint_id,
+                    "created_at": now(), "status": "failed", "action": None, "explanation": None,
+                    "failed_trace_access": True, "model_calls": [], "error": None}
+        messages = [
+            {"role": "developer", "content": "You are a separate repair proposer. You may inspect the failed trace, "
+             "including events after the checkpoint. Propose exactly one replacement tool call. "
+             "Return a JSON object with exactly tool (string), arguments (object), explanation (string citing actual observations). "
+             "Use only the supplied tools and the customer's actual instructions. "
+             "No grader, expected trajectory, or hidden reasoning is available. Do not claim a unique root cause."},
+            {"role": "user", "content": canonical({"request": scenario(parent["scenario_id"])["request"],
+             "pending_action": payload["pending_action"], "recorded_trace": parent["events"],
+             "allowed_tools": environment.schemas()})},
+        ]
+        try:
+            message, call = MetaClient(self.store).complete(messages, [], run_id, "proposal", 0,
+                                                          proposal_id=proposal["id"], json_output=True)
+            proposal["model_calls"].append(call)
+            raw = json.loads(message["content"])
+            if set(raw) != {"tool", "arguments", "explanation"} or not isinstance(raw["explanation"], str):
+                raise ValueError("Meta returned an invalid patch proposal schema.")
+            proposal["action"] = environment.validate({"tool": raw["tool"], "arguments": raw["arguments"]})
+            proposal["explanation"] = raw["explanation"]
+            proposal["status"] = "ready"
+        except Exception as error:
+            proposal["error"] = str(error)
+            proposal["model_calls"] = [c for c in self.store.calls() if c.get("proposal_id") == proposal["id"]]
+        self.store.save_proposal(proposal)
+        return proposal
+

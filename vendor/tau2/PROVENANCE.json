@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/sierra-research/tau2-bench",
+  "commit": "122e2432b82d740e8f313f46f0a071729c404f39",
+  "archive_sha256": "a6303ee5aedb066dd5f6b505b780acbd7e12a232158199d4d57e4073b04e1923",
+  "files": {
+    "src/tau2/domains/retail/data_model.py": "f5ad09590953855cc49d2ab2ad5c0594be408cae74d1500fb278e5a6bf2c50d6",
+    "src/tau2/domains/retail/tools.py": "d0a9afdd44dbb1e7b1b4d19e0acf8ba9e3c99db78f775383a4b63fe5b0ccf52a",
+    "src/tau2/domains/retail/utils.py": "a385b085b63d0e5921c15f7e2201b00df1d984990f4dbb7b24a867e3bf7cb648",
+    "src/tau2/environment/db.py": "49e12f900a8aabe62d6137a9baa1e7d471f9b3e516cf7c85fb61ecde8a65154c",
+    "src/tau2/environment/tool.py": "6dd74021ba95a6f8dfa0971546b768b90e15b212f8f9051156ae6bcdd24b77d3",
+    "src/tau2/environment/toolkit.py": "3e897891e8878c3399aec72e42eb0eb5546642420c0c902b225421fc936b924a",
+    "src/tau2/environment/regional.py": "58a10060efe1d400d33ae98f49bf3a9d5b4e14509cb36a73b6872ccb7a4591aa",
+    "src/tau2/utils/__init__.py": "e255aeff0258cf0042f57283c5375cd78b034509b886ba827cd927a2a6d27c6a",
+    "src/tau2/utils/io_utils.py": "ce66fb275b9bbf09a17be2cb2092bf2e696ab07655bf7571fe53ba8db4ed3015",
+    "src/tau2/utils/pydantic_utils.py": "618dfc39b619bb0f623151682962ddc52bf2ea70bc2562dded884f118c84b78a",
+    "src/tau2/utils/utils.py": "68cb14fe08e7dda6fdecd40acaccbd95849b0286b1e1ea45eeaf63637b59859a",
+    "src/tau2/utils/text_match.py": "7580b760a4dd88d986e720f45df33b0fc1fafaa44a780d41ce0b6e108f38065a",
+    "data/tau2/domains/retail/policy.md": "2c9652afbce57d6e087768d37cda64d31c53d50b3e3225cfdb791bac66466467",
+    "LICENSE": "e67c5aa0074dfcaefd3c3a1aedb94cb539234aecd15d5a972574e3200e6252fe"
+  },
+  "modified_entry_points": [
+    "src/tau2/__init__.py",
+    "src/tau2/domains/__init__.py",
+    "src/tau2/domains/retail/__init__.py",
+    "src/tau2/environment/__init__.py"
+  ]
+}
