@@ -1,34 +1,25 @@
 # Agent Time Machine
 
-**Record an agent run. Rewind a decision. Change the action. Compare the evidence.**
+**Record an AI agent. Rewind a decision. Try another action. Verify the outcome.**
 
-A local execution debugger for one tool-using retail agent, built for the Meta
-Global AI Developer Hackathon. The interface operates on real, persisted tool
-executions in a pinned tau2 retail simulator subset.
+Agent Time Machine is a local debugger for developers building AI agents, created
+for the Meta AI Developer Hackathon. A Meta model powers the live coding agent;
+the debugger records its tools, files, observable conversation, and results.
+Developers can restore a checkpoint, supply another action, execute an isolated
+branch, and compare actual code changes and verification output.
 
-The offline demo deliberately injects a bad decision. A manual correction can
-change the outcome while preserving the original run. That demonstrates an
-intervention in this environment; it does not establish a unique root cause,
-universal rollback, or a measured advantage in live agent recovery.
+The main demo uses a JavaScript timestamp parser. One deliberately injected patch
+fixes a reported timestamp but breaks timezone offsets. Another weakens a test
+to make its visible command pass without fixing the bug. Independent, frozen
+checks reject both attempts. Failed branches remain beside successful repairs.
 
-## Run locally
+## Quick start
 
-Requires **Python 3.11+** and **Node.js 22+**. The environment and dependencies
-are already prepared in this checkout.
-
-From PowerShell in the repository:
-
-```powershell
-npm run build
-.\.venv\Scripts\python.exe -m backend
-```
-
-Open **http://127.0.0.1:8000**. Or use `./scripts/start.ps1` after building.
-The first startup executes and saves the default deterministic scenario.
-
-For a new checkout, create an environment using a Python 3.11+ interpreter:
+Validated with **Python 3.11 and Node.js 22 on Windows**. In PowerShell:
 
 ```powershell
+git clone https://github.com/Eswar-deep/agent-time-machine.git
+cd agent-time-machine
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.lock
 npm ci
@@ -36,73 +27,96 @@ npm run build
 .\.venv\Scripts\python.exe -m backend
 ```
 
-If the Windows Python launcher is unavailable, substitute the absolute path of
-your Python 3.11+ executable. This workstation used the existing `geo-hunt`
-conda environment only to create the project-local virtual environment.
-Linux/macOS: `python3.11 -m venv .venv`, then use `.venv/bin/python`.
+Open **http://127.0.0.1:8000**. The deterministic demo needs no API key and makes
+no model calls. The first startup saves a default coding run. Later launches
+can use `./scripts/start.ps1` after building. See [setup](docs/SETUP.md) for
+development mode, other platforms, configuration, and persistence.
 
-For UI development, run the backend and `npm run dev` in separate terminals.
-Vite serves on port 5173 and proxies API requests to port 8000.
+## Try a repair
 
-## Try the intervention
+1. Choose **A fix that shifts time**, **Deterministic demo**, then **Run scenario**.
+2. Select the `write_file` action and open **Intervene**.
+3. In **Source content**, replace this complete line:
 
-1. Run **The wrong order** in **Deterministic demo** mode.
-2. Select the `cancel_pending_order` checkpoint.
-3. Change `order_id` from `#W1048202` to `#W1048201`.
-4. Select **Fork & execute**.
-5. Inspect the checks, state differences, and verified parent hash.
+   ```javascript
+   return new Date(local.getTime()).toISOString();
+   ```
 
-Also try **A digit off** (postal code) and **The refund detour** (refund method).
-All are synthetic development tasks using tau2 tools, **not official benchmark
-tasks or scores**. The offline policy is explicitly scripted and never presented
-as Meta output. [The demo script](docs/DEMO.md) includes failure, restart, replay,
-and incompatible-checkpoint walkthroughs.
+   with:
 
-## What is implemented
+   ```javascript
+   return new Date(local.getTime() - offsetMinutes * 60000).toISOString();
+   ```
 
-- A React/TypeScript debugger with scenario selection, saved run history,
-  execution timeline, checkpoint state/context, JSON intervention editor,
-  isolated forks, outcome comparisons, and JSON exports.
-- SQLite persistence, append-only saved runs, independent branch state, and
-  SHA-256 integrity checks.
-- Checkpoints containing environment, conversation prefix, pending action,
-  agent cursor/configuration, tool schemas, source/policy/runtime fingerprints,
-  lineage, boundary, and declared randomness behavior.
-- Unchanged replay of **all reads and writes**, with observation and final-state
-  comparisons. Saved assistant messages are explicitly recorded playback.
-- A fresh deterministic continuation after manual changes, or an opt-in fresh
-  Meta continuation. The original future is excluded.
-- Independent task-state, final-communication, authentication, and custom
-  upfront-consent checks. Full retail dialogue policy is **not evaluated**.
-- An opt-in Meta adapter, reviewed structured patch proposals, strict tool
-  validation, request identities, bounded calls/output, timeouts, and a ledger
-  that includes failed requests and proposal costs.
+4. Keep **Deterministic demo policy** and click **Fork & execute**.
+5. Inspect **Compare → Code changes**, **Test results**, and **Command output**.
+   Accept the alternative only if its implemented checks pass. Its parent and
+   other branches remain saved and unchanged.
 
-## Meta configuration
+The [demo walkthrough](docs/DEMO.md) also covers **The misleading green test**,
+failed repairs, replay, and checkpoint inspection.
 
-Copy [.env.example](.env.example) to `.env` and configure the **server**
-environment. Never put credentials in the browser, chat, or a commit.
+**Two test results serve different purposes.** A visible command can exit 0 after
+its assertion is weakened; the final evaluation still rejects the repair.
+An inherited failure before a successful edit remains historical evidence.
+Final checks evaluate the resulting code.
 
-- `MODEL_API_KEY`: your Meta Model API key.
-- `META_MODEL`: a model your account can access.
-- `ATM_LIVE_MAX_CALLS`: explicit allowance from 1 to 12 per run. Defaults to 0,
-  which prevents live calls. An attached proposal counts toward its branch.
-- Optional output-token and timeout bounds are documented in the example.
-- Optional per-million-token rates enable an estimate from measured usage.
-  Missing rates or usage are reported as unknown, never as zero.
+## Live Meta mode
 
-The adapter uses Meta's documented
-[Chat Completions protocol](https://dev.meta.ai/docs/cookbook/quickstart-chat-completions)
-and [tool-calling format](https://dev.meta.ai/docs/cookbook/tool-function-calling)
-at `https://api.meta.ai/v1`, checked October 30, 2026. The example model is
-`muse-spark-1.3`; account access is not assumed or verified.
+Copy [.env.example](.env.example) to a new `.env` without overwriting an existing
+file. Configure `MODEL_API_KEY`, an accessible `META_MODEL`, and an explicit
+`ATM_LIVE_MAX_CALLS` allowance, then restart the backend. The default allowance
+is **0**. A full run can require several calls; the maximum is **12**.
+Select **Live Meta** for a real coding-agent execution.
 
-**No live model calls have been made during implementation.** Model tests use a
-mock HTTP transport. A live branch and live recovery evaluation remain gated on
-account access and an explicit allowance. The local demo works without them.
-No model-response cache is implemented. Retries are disabled.
+Live mode supports fresh continuation and reviewed model-generated patch
+proposals. Keys stay on the server. Calls, failures, latency, and available token
+usage are recorded. Monetary cost stays unknown unless pricing and usage are
+available. There are no automatic retries or model-response caches.
 
-## Verification
+One live date-parser repair was verified on **November 3, 2026**: **9 Meta calls,
+8 tool calls, and 28/28 implemented checks passed**, without an injected patch.
+That establishes one live fixture repair. Repeatable counterfactual recovery
+demonstrations use injected failures and manual interventions.
+See [validation evidence and limits](docs/VALIDATION.md).
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Record execution] --> B[Choose pre-action checkpoint]
+    B --> C[Replace pending action]
+    C --> D[Execute isolated branch]
+    D --> E[Compare verified outcomes]
+```
+
+- **Checkpoint:** Candidate files, tracked/untracked metadata, conversation prefix,
+  pending action, agent configuration, and compatibility hashes.
+- **Isolation:** Candidate JavaScript runs in QuickJS WebAssembly with no exposed
+  host filesystem, process, environment, network, or module loader. File tools
+  modify only a virtual repository snapshot.
+- **Verification:** Protected behavior expectations and test-integrity checks stay
+  outside the guest and model prompts. Actual commands and exit codes are saved.
+- **History:** SQLite stores immutable runs, checkpoint lineage, proposals, usage,
+  and exports. Replay reexecutes tools; assistant messages remain recorded playback.
+- **Interface:** Execution timeline, source editor with search/undo, state/context
+  inspection, side-by-side evidence, saved history, themes, and responsive layout.
+
+## Documentation
+
+| Guide | Contents |
+|---|---|
+| [Setup](docs/SETUP.md) | Installation, configuration, development, persistence |
+| [Demo](docs/DEMO.md) | Presentation steps, manual repairs, misleading tests, replay |
+| [Architecture](docs/ARCHITECTURE.md) | Components, checkpoints, branches, model boundaries |
+| [Coding sandbox](docs/CODING_SANDBOX.md) | Isolation implementation and security limits |
+| [API](docs/API.md) | Endpoints, examples, execution and error semantics |
+| [Validation](docs/VALIDATION.md) | Observed results, reproducible checks, supported claims |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Keys, billing, timeouts, checkpoints, test failures |
+| [Progress](docs/PROGRESS.md) | Dated implementation history |
+| [Third-party notices](THIRD_PARTY.md) | Runtime, editor, and vendored retail provenance |
+
+## Development checks
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests -q
@@ -110,29 +124,25 @@ npm run build
 npm run test:ui
 ```
 
-Browser tests use installed Edge on Windows. For bundled Chromium, run
-`npx playwright install chromium` and set `PLAYWRIGHT_CHANNEL=bundled`.
-The browser suite uses the real backend, not mocked UI data.
+Latest recorded checks: **75 backend tests passed**, **11 browser tests passed**
+against the real backend using Edge, and the production build passed. Browser
+tests use deterministic scenarios and make no paid model calls. Playwright
+reuses an existing server and creates test runs in its database; see
+[validation](docs/VALIDATION.md) for separate test data.
 
-See [implementation state](docs/PROGRESS.md) for the latest observed results,
-[architecture and contracts](docs/ARCHITECTURE.md), and
-[third-party attribution](THIRD_PARTY.md).
+## Scope
 
-## Data and boundaries
+This supports a small synchronous JavaScript fixture and three secondary
+synthetic retail scenarios using pinned tau2 tools. Arbitrary-repository shell
+access, package installation, suspended OS processes, and external-service
+rollback are outside the current scope. The app binds to loopback and has no
+production authentication or deployment configuration.
 
-Runs and checkpoints live in `data/agent-time-machine.sqlite3`; override with
-`ATM_DATABASE`. Restarting the app preserves them. Exports contain the synthetic
-conversation, observations, snapshots, patch provenance, and usage records.
-The live ledger is available at `/api/model-calls`; API docs at `/docs`.
-
-The server binds to loopback and has no production authentication or deployment.
-Simulator tools do not send email, make payments, or contact real stores.
-Checksums detect accidental modifications, not adversarial tampering.
-Source/policy/runtime changes intentionally make old checkpoints unsupported;
-saved runs remain inspectable when their integrity checks pass.
-
-The supplied validation ZIP was not attached and its authenticated Library link
-could not be fetched. Its report and historical numerical results have not been
-reproduced. Instead, the retail source was retrieved at the exact supplied
-commit, with original behavior and license retained.
+The checks are public development assets, not a held-out benchmark. Passing them
+does not establish universal correctness or a general recovery advantage.
+The trusted launcher, verifier, and WASM runtime are part of the security boundary;
+unknown runtime vulnerabilities are outside these claims. Earlier retail replay
+evidence does not validate coding restoration. See the
+[frozen fixture](fixtures/date_parser/README.md) and
+[execution boundary](docs/CODING_SANDBOX.md).
 

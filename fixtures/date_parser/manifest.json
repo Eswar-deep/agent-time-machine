@@ -1,0 +1,86 @@
+{
+  "fixture_id": "date-parser-v1",
+  "version": 1,
+  "hash_scheme": "sha256_utf8_lf",
+  "frozen_before_evaluation": true,
+  "requirements": {
+    "path": "requirements.json",
+    "sha256": "dd21a9db5e129ca0e6b5a0ce5b6c0e12cc36b9b613155b03a04754a6a1c61753"
+  },
+  "protected_evaluator": {
+    "path": "protected/acceptance.json",
+    "sha256": "726bfe684b62328a0c7876b83ef18b7e37fbf021cef875b23949b206c237f465",
+    "test_count": 25,
+    "format": "cases"
+  },
+  "visible_tests": {
+    "path": "test_timestamp_parser.js",
+    "sha256": "2ab04535df8a19251d07ef27ebe45575bcf4d50927ee11e4f84040a4a0961c56",
+    "test_count": 4
+  },
+  "candidate_root": "candidate",
+  "entrypoint": "timestamp_parser.js",
+  "export_name": "parseTimestamp",
+  "candidate_files": {
+    "notes/reproduction.txt": {
+      "sha256": "cb370ad24b9483850b0475a472105d1e51b2667987f82ddb99484e4a182c3bc2",
+      "tracked": false
+    },
+    "README.md": {
+      "sha256": "7eeef5c3b22306b0b4785c6a9418576b6ac01f309e66c39e5eef05ed29f9b601",
+      "tracked": true
+    },
+    "test_timestamp_parser.js": {
+      "sha256": "2ab04535df8a19251d07ef27ebe45575bcf4d50927ee11e4f84040a4a0961c56",
+      "tracked": true
+    },
+    "timestamp_parser.js": {
+      "sha256": "7243535bff0342a351e144a149f19d4a59385e81f61595a38e706b04fa99d951",
+      "tracked": true
+    }
+  },
+  "execution_config": {
+    "language": "javascript",
+    "runtime": "quickjs-emscripten",
+    "dependencies": [],
+    "visible_command": [
+      "isolated-quickjs",
+      "test_timestamp_parser.js"
+    ],
+    "environment": {
+      "timezone": "UTC"
+    },
+    "network": "disabled",
+    "filesystem": "no host filesystem capability",
+    "process": "no host process capability",
+    "isolation": "WebAssembly QuickJS guest; trusted coordinator exposes no filesystem, network, or process bridges"
+  },
+  "patches": {
+    "injected_regression": {
+      "path": "patches/injected_regression.json",
+      "diff_path": "patches/injected_regression.diff",
+      "provenance": "injected"
+    },
+    "correct": {
+      "path": "patches/correct.json",
+      "diff_path": "patches/correct.diff",
+      "provenance": "manual"
+    },
+    "misleading_green": {
+      "path": "patches/misleading_green.json",
+      "diff_path": "patches/misleading_green.diff",
+      "provenance": "injected"
+    }
+  },
+  "model_context_allowlist": [
+    "requirements.json",
+    "candidate/README.md",
+    "candidate/timestamp_parser.js",
+    "candidate/test_timestamp_parser.js",
+    "candidate/notes/reproduction.txt"
+  ],
+  "model_context_exclusions": [
+    "protected/",
+    "patches/"
+  ]
+}

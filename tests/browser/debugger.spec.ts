@@ -9,6 +9,7 @@ test.beforeEach(async ({ page, request }) => {
   await page.addInitScript(id => {
     if (!sessionStorage.getItem('atm-test-initialized')) {
       localStorage.setItem('atm-active-run', id);
+      localStorage.setItem('atm-primary-domain', 'coding-v1');
       sessionStorage.setItem('atm-test-initialized', 'true');
     }
   }, run.id);
@@ -30,8 +31,15 @@ test('forks a real correction and preserves the original after reload', async ({
   await expect(page.getByText('Intervention ready · action changed')).toBeVisible();
   await page.getByRole('button', { name: 'Fork & execute' }).click();
   await expect(page.getByRole('heading', { name: 'Compare the timelines' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /^Compare/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('textbox', { name: 'Tool arguments JSON' })).toHaveCount(0);
   await expect(page.getByText('Parent verified unchanged')).toBeVisible();
   await expect(page.locator('.metrics').getByText('Passed implemented checks')).toBeVisible();
+  await expect(page.getByRole('tab', { name: /^Compare/ })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'Inspect', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Tool arguments JSON' })).toHaveValue(JSON.stringify({
+    order_id: '#W1048201', reason: 'no longer needed',
+  }, null, 2));
   const branchId = await page.evaluate(() => localStorage.getItem('atm-active-run'));
   expect(branchId).not.toBe(parentId);
   expect(await (await request.get('/api/runs/' + parentId)).json()).toEqual(original);
@@ -46,9 +54,13 @@ test('forks a real correction and preserves the original after reload', async ({
 
 test('unchanged replay is labeled separately from task success', async ({ page }) => {
   await page.getByRole('button', { name: 'Replay unchanged', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /^Results/ })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('The recorded tool sequence reproduced its observations and state.')).toBeVisible();
   await expect(page.getByText('This is a tool replay. Open its parent run to fork a decision.')).toBeVisible();
   await expect(page.getByText('Task success is not evaluated by this replay. Displayed agent messages are saved playback.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Inspect', exact: true }).click();
+  await expect(page.getByText('This is a tool replay. Open its parent run to fork a decision.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Fork & execute' })).toBeDisabled();
 });
 
 test('a failed tool branch is explicit and saved', async ({ page }) => {
@@ -59,6 +71,7 @@ test('a failed tool branch is explicit and saved', async ({ page }) => {
   await expect(page.getByText('Execution stopped', { exact: true })).toBeVisible();
   await expect(page.locator('.metrics').getByText('Failed checks')).toBeVisible();
   await expect(page.getByText('Parent verified unchanged')).toBeVisible();
+  await expect(page.getByRole('tab', { name: /^Compare/ })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('browser-exported checkpoints validate and incompatible versions give readable errors', async ({ page, request }) => {

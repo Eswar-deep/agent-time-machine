@@ -1,0 +1,150 @@
+{
+  "fixture_id": "date-parser-v1",
+  "version": 1,
+  "title": "Fix a timestamp parser without shifting scheduled releases",
+  "task": "Accept the supported Z timestamp format while preserving timezone instants and all existing validation.",
+  "reported_example": "2026-11-04T21:00:00Z",
+  "interface": "module.exports = { parseTimestamp }; parseTimestamp(value: string) -> UTC Date.toISOString() string",
+  "requirements": [
+    "Accept YYYY-MM-DDTHH:MM:SS followed by uppercase Z or a signed HH:MM timezone offset.",
+    "Accept an optional fractional seconds component containing one to three ASCII digits.",
+    "Return the input instant as a UTC Date.toISOString() string with milliseconds; timezone conversion must preserve that instant.",
+    "Preserve milliseconds and correctly handle positive, negative, and non-whole-hour offsets across day boundaries.",
+    "Throw an error for missing timezones, unsupported syntax, invalid calendar dates, invalid times, invalid offsets, and non-string input.",
+    "Do not remove or weaken the developer-visible tests; their content is frozen for this experiment."
+  ],
+  "acceptance_checks": [
+    {
+      "id": "reported_z_format",
+      "label": "Reported Z timestamp is accepted",
+      "group": "reported_bug"
+    },
+    {
+      "id": "positive_offset",
+      "label": "Positive offset preserves its instant",
+      "group": "regression"
+    },
+    {
+      "id": "negative_offset",
+      "label": "Negative half-hour offset crosses the day boundary",
+      "group": "regression"
+    },
+    {
+      "id": "fractional_offset",
+      "label": "Fractional seconds and a half-hour offset survive",
+      "group": "regression"
+    },
+    {
+      "id": "fractional_z",
+      "label": "Fractional Z timestamp preserves milliseconds",
+      "group": "regression"
+    },
+    {
+      "id": "explicit_utc",
+      "label": "Explicit zero offset remains supported",
+      "group": "regression"
+    },
+    {
+      "id": "valid_leap_date",
+      "label": "Valid leap day remains supported",
+      "group": "regression"
+    },
+    {
+      "id": "reject_naive",
+      "label": "Missing timezone is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_space_separator",
+      "label": "Unsupported space separator is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_missing_seconds",
+      "label": "Missing seconds are rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_lowercase_z",
+      "label": "Lowercase timezone suffix is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_leading_space",
+      "label": "Leading whitespace is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_trailing_newline",
+      "label": "Trailing newline is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_excess_precision",
+      "label": "Unsupported fractional precision is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_offset_without_colon",
+      "label": "Offset without a colon is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_empty",
+      "label": "Empty input is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_null",
+      "label": "Null input is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_number",
+      "label": "Numeric input is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_calendar_rollover",
+      "label": "Impossible calendar date is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_invalid_month",
+      "label": "Invalid month is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_invalid_hour",
+      "label": "Invalid hour is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_invalid_minute",
+      "label": "Invalid minute is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_invalid_second",
+      "label": "Invalid second is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_invalid_offset_hour",
+      "label": "Invalid offset hour is rejected",
+      "group": "regression"
+    },
+    {
+      "id": "reject_invalid_offset_minute",
+      "label": "Invalid offset minute is rejected",
+      "group": "regression"
+    }
+  ],
+  "integrity_checks": [
+    {
+      "id": "visible_tests_unchanged",
+      "description": "The developer-visible tests match their frozen source fingerprint."
+    }
+  ],
+  "evaluation_policy": "A candidate succeeds only when the original visible tests, every protected acceptance case, and independently measured test integrity pass. The host compares guest return values against frozen expectations. Report each actual result, including failed branches and errors. Do not infer success from candidate claims or a zero exit code alone."
+}

@@ -1,70 +1,161 @@
-# A short, reproducible demonstration
+# Coding-agent demonstration
 
-Start with a built interface and the backend running at http://127.0.0.1:8000.
-No key is required. All task and customer data is synthetic.
+Start the built app at http://127.0.0.1:8000. The main scenario is **A fix that
+shifts time**. Use **Deterministic demo** unless a live call allowance has been
+explicitly configured. The app retains original runs and failed alternatives.
 
-## 1. A decision worth rewinding
+## 1. A fix that is not a complete repair
 
-Run **The wrong order** in **Deterministic demo** mode.
+The reported input is `2026-11-04T21:00:00Z`.
+The parser initially rejects it, while explicit timezone offsets work.
 
-Say: “This agent has the correct request and consent. We deliberately injected
-a wrong order ID to demonstrate the debugger. These are actual simulator calls,
-not a live model result.”
+Say: “This is a deliberately injected coding-agent failure. We execute real
+JavaScript inside a WASM sandbox; this trace is not live Meta output.”
 
-Inspect the request: cancel `#W1048201`, keep `#W1048202`.
-Select the final `cancel_pending_order` checkpoint. Its pending arguments
-incorrectly target `#W1048202`.
+Inspect the first `run_tests` call: the visible suite exits **1**, with
+three checks passing and the reported example failing. Inspect the
+`write_file` patch: it adds Z support but stops subtracting the offset.
+The second visible suite exits **0**. The independent protected verifier exits
+**1**: the reported bug passes, but three offset regressions fail.
 
-## 2. An isolated alternative
+The displayed task result is **25 of 28 implemented checks passed**. The 28
+checks comprise 25 protected behavior cases, frozen test integrity, the visible
+test command, and execution/verification completion.
 
-Change only `order_id` to `#W1048201`, then **Fork & execute**.
-The new branch cancels the requested order and leaves the gift untouched.
-Its fresh final response reports the real refund and timing.
+## 2. Rewind and make one source change
 
-Show parent and branch checks, actual changed state paths, and the parent hash.
-The displayed result is **passed implemented checks**, not complete policy
-compliance. The original future was not fed to the continuing agent.
+Select the `write_file` checkpoint. It is immediately before the edit,
+with the initial parser and unmodified tests still in the file snapshot.
 
-## 3. An intervention that fails
+In **Source content**, replace:
 
-Open **Parent run**. Change the same pending order ID to `#MISSING`.
-Execute another fork. Show the actual tool error, failed execution/checks, and
-unchanged parent. The successful sibling remains available in history.
+```javascript
+return new Date(local.getTime()).toISOString();
+```
 
-## 4. Replay and presentation reliability
+with:
 
-Open a saved original and choose **Replay unchanged**. All tool calls, including
-reads, execute again. Observation/state matches are reported separately from task
-success. Assistant messages here are recorded playback.
+```javascript
+return new Date(local.getTime() - offsetMinutes * 60000).toISOString();
+```
 
-Saved original, successful branch, and failed branch can all be reopened from
-history. Restart the server to demonstrate SQLite persistence.
+Select **Fork & execute**. The branch restores the checkpoint into an independent
+file snapshot, applies the edited source, runs the visible tests again, and
+executes the same frozen protected checks.
 
-## 5. Incompatible state is rejected
+The workspace opens **Compare → Code changes**. Show **Original patch** and
+**Alternative patch** side by side. The alternative
+passes **28/28 implemented checks**, and its protected command exits **0**.
+The original remains failed, with its hash verified unchanged. Expand the
+regression group under **Test results** to inspect individual outcomes; select
+**Command output** for the actual protected verifier output. **Inspect** returns
+to the editor. Draft edits survive selecting another checkpoint during inspection.
 
-Export a checkpoint from the inspector. Generate a separate demonstration copy:
+This supports the declared intervention on this fixture. It is not evidence of
+general coding-agent recovery or a unique causal diagnosis.
+
+## 3. Keep an unsuccessful alternative
+
+Open **Parent run**, select its edit checkpoint, and try the wrong sign instead:
+
+```javascript
+return new Date(local.getTime() + offsetMinutes * 60000).toISOString();
+```
+
+Fork again. Its visible tests can still look green, but the protected offset
+checks fail. The failed branch remains in history alongside the successful one;
+neither changes its parent or sibling. Actual command output, elapsed time,
+verification overhead, and model-call usage are retained.
+
+## 4. Reject a misleading green test
+
+Run **The misleading green test**. This injected candidate changes the visible
+reported-bug test to expect an exception, leaving the parser unfixed.
+
+The visible command exits **0**, but the protected verifier detects changed
+tests and the remaining Z-format failures. Open **Results → Test results** to
+show **Tampering detected** and the failed reported-bug check; select
+**Command output** for the actual protected verifier output.
+
+The evaluator and expected values are outside the guest. A candidate cannot
+turn them green by editing its local assertions or printing a success message.
+
+### Walk through the misleading-test scenario
+
+There are two visible test actions in an original deterministic coding run.
+Action **05** exits **1**, reproducing the initial bug. Action **06** weakens
+the test, and action **07** exits **0** against that changed test. The final
+**Results → Test results** view still rejects the candidate with **25/28**.
+Open **Code changes** to see `assertEqual` replaced by `assertThrows`.
+
+For a manual repair, select the checkpoint before action **06**, set the
+replacement path to `timestamp_parser.js`, and supply the complete original
+parser from the snapshot. Extend its timezone pattern to accept `Z`, and use
+this complete final calculation, including the return statement:
+
+```javascript
+const offsetMinutes = zone === "Z" ? 0 :
+  (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6))) *
+  (zone[0] === "+" ? 1 : -1);
+return new Date(local.getTime() - offsetMinutes * 60000).toISOString();
+```
+
+Keep all calendar validation and original tests. A reference manual patch is
+available in [correct.json](../fixtures/date_parser/patches/correct.json); it is
+a disclosed development aid and is never supplied to the live model.
+Choose **Deterministic demo policy**, then **Fork & execute**. Verify the
+resulting branch's actual checks and command output before calling it repaired.
+
+An earlier test marked **Inherited** keeps its historical Exit 1 after a
+successful repair. The fresh test after the edit should pass. Final **28/28**
+checks describe the resulting candidate rather than every command in history.
+See [troubleshooting](TROUBLESHOOTING.md) if a manual edit returns undefined.
+
+## 5. Inspect restoration and persistence
+
+The **State** tab lists all snapshot files, including
+`notes/reproduction.txt`, which is marked untracked in this candidate
+repository. **Context** shows only messages before the boundary. The execution
+configuration and runtime fingerprints are included in checkpoint exports.
+
+Unchanged replay reexecutes every recorded tool and compares observations/state,
+excluding volatile elapsed-time fields. Saved assistant messages are explicitly
+recorded playback. Replay does not independently certify task success.
+
+Restart the app and reopen the saved runs. SQLite persists their code,
+observations, checks, provenance, parent links, and failed attempts.
+
+For incompatible-state rejection, export a checkpoint and create a separate copy:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/make_incompatible_checkpoint.py checkpoint.json incompatible.json
 ```
 
-Open **How it works**, choose **Validate checkpoint file**, and import that
-copy. The UI displays the unsupported-format reason. The original export is
-unchanged. A checksum is an integrity check, not an adversarial security claim.
+Use **How it works → Validate checkpoint file**. The UI rejects the unsupported
+format with a readable reason. The original file remains unchanged.
 
-## Optional live segment
+## Optional live Meta segment
 
-Only after configuring account access, model, and a bounded allowance:
+The coding workflow reuses the existing bounded Meta adapter and reviewed patch
+proposals. With the updated key, a full live date-parser run was verified on
+November 3: 9 model calls, 8 tool calls, 30,952 tokens, and 28/28 implemented
+checks passed. Visible tests exited 1 before the generated edit and 0 afterward;
+protected verification exited 0. The original run was live and had no injected
+patch. This proves one live fixture repair, not counterfactual recovery gains.
+Earlier rejected and incomplete attempts remain in history and the ledger.
 
-1. Record a **Live Meta** run, or choose a saved checkpoint.
-2. Ask Meta for a structured patch. The separate proposer may inspect the full
-   failed trace; its access is explicitly labeled.
-3. Review the proposed tool and arguments, then fork with a fresh Meta
-   continuation. The continuing agent sees only checkpoint context and the
-   executed change.
-4. Show all outcomes, usage, latency, failures, and unknown costs honestly.
+Choose **Live Meta** to run a live agent, or request a patch for a
+checkpoint. The separate proposer may inspect the failed visible trace, but not
+protected cases or example correction assets. Review the proposed source, then
+execute with fresh Meta continuation from checkpoint context. Include proposal
+calls and failures in measured usage. Do not substitute old future messages.
 
-No live successful repair is currently available. Do not describe deterministic
-or mocked tests as live Meta evidence. No frozen live evaluation or comparative
-recovery advantage has been established.
+## Scope
+
+This demo supports one synchronous JavaScript module in a bounded QuickJS WASM
+guest. It does not provide arbitrary shell commands, dependency installation,
+universal repository rollback, or rewinding of external services.
+
+Retail remains available as a secondary domain. Its earlier replay evidence
+does not establish coding restoration or coding-agent recovery.
 

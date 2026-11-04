@@ -1,0 +1,181 @@
+{
+  "fixture_id": "date-parser-v1",
+  "version": 1,
+  "cases": [
+    {
+      "id": "reported_z_format",
+      "label": "Reported Z timestamp is accepted",
+      "group": "reported_bug",
+      "input": "2026-11-04T21:00:00Z",
+      "expected": "2026-11-04T21:00:00.000Z"
+    },
+    {
+      "id": "positive_offset",
+      "label": "Positive offset preserves its instant",
+      "group": "regression",
+      "input": "2026-11-04T23:00:00+02:00",
+      "expected": "2026-11-04T21:00:00.000Z"
+    },
+    {
+      "id": "negative_offset",
+      "label": "Negative half-hour offset crosses the day boundary",
+      "group": "regression",
+      "input": "2026-11-04T23:45:00-05:30",
+      "expected": "2026-11-05T05:15:00.000Z"
+    },
+    {
+      "id": "fractional_offset",
+      "label": "Fractional seconds and a half-hour offset survive",
+      "group": "regression",
+      "input": "2026-11-04T01:15:30.123+05:30",
+      "expected": "2026-11-03T19:45:30.123Z"
+    },
+    {
+      "id": "fractional_z",
+      "label": "Fractional Z timestamp preserves milliseconds",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00.12Z",
+      "expected": "2026-11-04T21:00:00.120Z"
+    },
+    {
+      "id": "explicit_utc",
+      "label": "Explicit zero offset remains supported",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00+00:00",
+      "expected": "2026-11-04T21:00:00.000Z"
+    },
+    {
+      "id": "valid_leap_date",
+      "label": "Valid leap day remains supported",
+      "group": "regression",
+      "input": "2024-02-29T12:15:00+00:00",
+      "expected": "2024-02-29T12:15:00.000Z"
+    },
+    {
+      "id": "reject_naive",
+      "label": "Missing timezone is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00",
+      "throws": true
+    },
+    {
+      "id": "reject_space_separator",
+      "label": "Unsupported space separator is rejected",
+      "group": "regression",
+      "input": "2026-11-04 21:00:00Z",
+      "throws": true
+    },
+    {
+      "id": "reject_missing_seconds",
+      "label": "Missing seconds are rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00Z",
+      "throws": true
+    },
+    {
+      "id": "reject_lowercase_z",
+      "label": "Lowercase timezone suffix is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00z",
+      "throws": true
+    },
+    {
+      "id": "reject_leading_space",
+      "label": "Leading whitespace is rejected",
+      "group": "regression",
+      "input": " 2026-11-04T21:00:00Z",
+      "throws": true
+    },
+    {
+      "id": "reject_trailing_newline",
+      "label": "Trailing newline is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00Z\n",
+      "throws": true
+    },
+    {
+      "id": "reject_excess_precision",
+      "label": "Unsupported fractional precision is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00.1234Z",
+      "throws": true
+    },
+    {
+      "id": "reject_offset_without_colon",
+      "label": "Offset without a colon is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00+0200",
+      "throws": true
+    },
+    {
+      "id": "reject_empty",
+      "label": "Empty input is rejected",
+      "group": "regression",
+      "input": "",
+      "throws": true
+    },
+    {
+      "id": "reject_null",
+      "label": "Null input is rejected",
+      "group": "regression",
+      "input": null,
+      "throws": true
+    },
+    {
+      "id": "reject_number",
+      "label": "Numeric input is rejected",
+      "group": "regression",
+      "input": 42,
+      "throws": true
+    },
+    {
+      "id": "reject_calendar_rollover",
+      "label": "Impossible calendar date is rejected",
+      "group": "regression",
+      "input": "2026-02-30T21:00:00Z",
+      "throws": true
+    },
+    {
+      "id": "reject_invalid_month",
+      "label": "Invalid month is rejected",
+      "group": "regression",
+      "input": "2026-13-04T21:00:00+00:00",
+      "throws": true
+    },
+    {
+      "id": "reject_invalid_hour",
+      "label": "Invalid hour is rejected",
+      "group": "regression",
+      "input": "2026-11-04T24:00:00Z",
+      "throws": true
+    },
+    {
+      "id": "reject_invalid_minute",
+      "label": "Invalid minute is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:60:00+00:00",
+      "throws": true
+    },
+    {
+      "id": "reject_invalid_second",
+      "label": "Invalid second is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:60Z",
+      "throws": true
+    },
+    {
+      "id": "reject_invalid_offset_hour",
+      "label": "Invalid offset hour is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00+24:00",
+      "throws": true
+    },
+    {
+      "id": "reject_invalid_offset_minute",
+      "label": "Invalid offset minute is rejected",
+      "group": "regression",
+      "input": "2026-11-04T21:00:00+01:60",
+      "throws": true
+    }
+  ]
+}

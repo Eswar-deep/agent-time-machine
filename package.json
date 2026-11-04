@@ -10,7 +10,12 @@
     "test:ui": "playwright test"
   },
   "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "codemirror": "^6.0.2",
     "lucide-react": "^0.468.0",
+    "quickjs-emscripten": "0.32.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -24,4 +29,3 @@
     "vite": "^6.4.1"
   }
 }
-

@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from .jsonutil import canonical, digest
@@ -40,10 +41,15 @@ class Store:
                 BEFORE DELETE ON runs BEGIN SELECT RAISE(ABORT, 'Saved runs are immutable'); END;
             """)
 
+    @contextmanager
     def connect(self):
         connection = sqlite3.connect(str(self.path), timeout=20)
         connection.execute("PRAGMA foreign_keys=ON")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def save_run(self, run: dict, checkpoints: list[dict]):
         with self.lock, self.connect() as connection:

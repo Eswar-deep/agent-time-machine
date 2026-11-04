@@ -1,0 +1,10 @@
+{
+  "label": "Injected original: fix Z, shift offset instants",
+  "provenance": "injected",
+  "description": "A deliberately injected bad patch. It accepts Z but treats every parsed wall time as UTC, breaking nonzero offsets.",
+  "files": {
+    "timestamp_parser.js": "\"use strict\";\n\n// Parse the timestamp formats supported by the release scheduler.\nfunction parseTimestamp(value) {\n  if (typeof value !== \"string\") throw new TypeError(\"Expected a timestamp string\");\n  const pattern = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{1,3}))?(Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/;\n  const match = pattern.exec(value);\n  if (!match || match[0] !== value) throw new RangeError(\"Expected an explicit timezone\");\n\n  const [, y, mo, d, h, mi, s, fraction = \"\", zone] = match;\n  const year = Number(y), month = Number(mo), day = Number(d);\n  const hour = Number(h), minute = Number(mi), second = Number(s);\n  const millisecond = Number(fraction.padEnd(3, \"0\"));\n  const local = new Date(0);\n  local.setUTCFullYear(year, month - 1, day);\n  local.setUTCHours(hour, minute, second, millisecond);\n  if (\n    local.getUTCFullYear() !== year || local.getUTCMonth() !== month - 1 ||\n    local.getUTCDate() !== day || local.getUTCHours() !== hour ||\n    local.getUTCMinutes() !== minute || local.getUTCSeconds() !== second\n  ) throw new RangeError(\"Invalid calendar date or time\");\n\n  const offsetMinutes = zone === \"Z\" ? 0 : (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6))) *\n    (zone[0] === \"+\" ? 1 : -1);\n  return new Date(local.getTime()).toISOString();\n}\n\nmodule.exports = { parseTimestamp };\n"
+  },
+  "fixture_id": "date-parser-v1",
+  "base": "initial_checkpoint"
+}

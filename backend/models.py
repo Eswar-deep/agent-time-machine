@@ -34,6 +34,7 @@ def meta_status() -> dict:
     key_present = bool(os.getenv("MODEL_API_KEY") or os.getenv("META_API_KEY"))
     model = os.getenv("META_MODEL", "")
     allowance = bounded_integer("ATM_LIVE_MAX_CALLS", 0, 0, 12)
+    reasoning_effort = os.getenv("META_REASONING_EFFORT", "low").strip().lower()
     blockers = []
     if not key_present:
         blockers.append("Set MODEL_API_KEY in the server environment.")
@@ -41,10 +42,12 @@ def meta_status() -> dict:
         blockers.append("Set META_MODEL to a model your Meta account can access.")
     if not allowance:
         blockers.append("Set ATM_LIVE_MAX_CALLS to a bounded allowance (1-12) to enable paid requests.")
+    if reasoning_effort not in {"minimal", "low", "medium", "high", "xhigh", "max"}:
+        blockers.append("Set META_REASONING_EFFORT to minimal, low, medium, high, xhigh, or max.")
     return {"available": not blockers, "blockers": blockers, "model": model or None,
             "base_url": os.getenv("META_BASE_URL", "https://api.meta.ai/v1"),
-            "max_calls": allowance,
-            "max_output_tokens": bounded_integer("ATM_LIVE_MAX_OUTPUT_TOKENS", 700, 64, 2048),
+            "max_calls": allowance, "reasoning_effort": reasoning_effort,
+            "max_output_tokens": bounded_integer("ATM_LIVE_MAX_OUTPUT_TOKENS", 2048, 64, 2048),
             "account_access": "not_verified", "price_status": "configured" if
             os.getenv("META_INPUT_USD_PER_MILLION") and os.getenv("META_OUTPUT_USD_PER_MILLION") else "unknown"}
 
@@ -60,6 +63,40 @@ def price(usage: dict | None) -> float | None:
         return (usage["prompt_tokens"] * input_rate + usage["completion_tokens"] * output_rate) / 1_000_000
     except (KeyError, ValueError, TypeError):
         return None
+
+
+def provider_failure(response: httpx.Response, key: str) -> tuple[str, dict]:
+    """Retain bounded provider diagnostics, never headers or raw response bodies."""
+    details = {"http_status": response.status_code}
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    error = body.get("error") if isinstance(body, dict) else None
+    if isinstance(error, dict):
+        secrets = {value for value in (key, os.getenv("MODEL_API_KEY"), os.getenv("META_API_KEY")) if value}
+        for field, limit in (("type", 100), ("code", 100), ("message", 800)):
+            value = error.get(field)
+            if isinstance(value, str):
+                # Redact before truncating, including provider errors that echo a key.
+                for secret in sorted(secrets, key=len, reverse=True):
+                    value = value.replace(secret, "[REDACTED]")
+                details[field] = " ".join(value.split())[:limit]
+    guidance = {
+        401: "Check that the configured Meta API key is valid and active.",
+        402: "Check billing and available credits for the Meta team that owns this API key.",
+        403: "Check this API key's team permissions and model access.",
+        429: "The Meta request or token limit was reached; check your team's usage limits.",
+    }.get(response.status_code)
+    message = f"Meta API returned HTTP {response.status_code}."
+    identifier = details.get("code") or details.get("type")
+    if identifier:
+        message += f" Provider code: {identifier}."
+    if details.get("message"):
+        message += " " + details["message"]
+    if guidance:
+        message += " " + guidance
+    return message + " No retries were made.", details
 
 
 class MetaClient:
@@ -79,7 +116,8 @@ class MetaClient:
         if base_url.rstrip("/") != "https://api.meta.ai/v1":
             raise ModelFailure("This adapter supports only https://api.meta.ai/v1. Correct META_BASE_URL.")
         payload = {"model": self.status["model"], "messages": clone(messages),
-                   "max_completion_tokens": self.status["max_output_tokens"]}
+                   "max_completion_tokens": self.status["max_output_tokens"],
+                   "reasoning_effort": self.status["reasoning_effort"]}
         if tools:
             payload.update({"tools": clone(tools), "parallel_tool_calls": False})
         if json_output:
@@ -94,12 +132,14 @@ class MetaClient:
         started = time.perf_counter()
         try:
             key = os.getenv("MODEL_API_KEY") or os.environ["META_API_KEY"]
-            timeout = bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 30, 1, 60)
+            timeout = bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 60, 1, 60)
             with httpx.Client(timeout=timeout, follow_redirects=False, trust_env=False) as client:
                 response = client.post(base_url.rstrip("/") + "/chat/completions",
                                        headers={"Authorization": "Bearer " + key}, json=payload)
+            record["http_status"] = response.status_code
             if response.status_code != 200:
-                raise ModelFailure(f"Meta API returned HTTP {response.status_code}. No retries were made.")
+                message, record["provider_error"] = provider_failure(response, key)
+                raise ModelFailure(message)
             body = response.json()
             usage = body.get("usage")
             if isinstance(usage, dict) and all(type(usage.get(k)) is int and usage[k] >= 0
@@ -110,6 +150,10 @@ class MetaClient:
             choices = body.get("choices") or []
             if not choices:
                 raise ModelFailure("Meta response has no choices; run is incomplete.")
+            record["finish_reason"] = choices[0].get("finish_reason")
+            if record["finish_reason"] == "length":
+                raise ModelFailure("Meta reached the output-token limit before completing. Increase "
+                                   "ATM_LIVE_MAX_OUTPUT_TOKENS or lower META_REASONING_EFFORT; run is incomplete.")
             if choices[0].get("finish_reason") not in ("stop", "tool_calls"):
                 raise ModelFailure("Meta response was truncated or did not complete; run is incomplete.")
             raw = choices[0]["message"]

@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from .environment import RetailEnvironment, compatibility
+from . import domains
 from .jsonutil import clone, digest
 
 FORMAT_VERSION = 1
@@ -15,21 +15,22 @@ class InvalidCheckpoint(ValueError):
     pass
 
 
-def capture(run: dict, environment: RetailEnvironment, messages: list,
+def capture(run: dict, environment, messages: list,
             pending: dict, agent_state: dict, agent_config: dict, event_boundary: int) -> dict:
     payload = {
         "format_version": FORMAT_VERSION, "run_id": run["id"], "parent_id": run["parent_id"],
+        "domain": run.get("domain", "retail"),
         "scenario_id": run["scenario_id"], "event_boundary": event_boundary,
         "environment": environment.snapshot(), "conversation": clone(messages),
         "pending_action": clone(pending), "agent_state": clone(agent_state),
         "agent_config": clone(agent_config), "tools": environment.schemas(),
-        "compatibility": compatibility(),
-        "randomness": {"used": False, "description": "No local RNG; live provider sampling is not reproducible."},
+        "compatibility": domains.compatibility(run.get("domain", "retail")),
+        "randomness": {"used": False, "description": "Supplied fixtures and coordinator use no RNG. Clock/random-dependent candidates and live provider sampling are not reproducible."},
     }
     return {"id": "cp_" + uuid4().hex, "run_id": run["id"], "payload": payload, "sha256": digest(payload)}
 
 
-def restore(checkpoint: dict) -> tuple[RetailEnvironment, dict]:
+def restore(checkpoint: dict) -> tuple[object, dict]:
     if not isinstance(checkpoint, dict) or not {"id", "run_id", "payload", "sha256"}.issubset(checkpoint):
         raise InvalidCheckpoint("Checkpoint envelope is incomplete. Import a checkpoint exported by this app.")
     payload = checkpoint["payload"]
@@ -41,10 +42,13 @@ def restore(checkpoint: dict) -> tuple[RetailEnvironment, dict]:
         raise InvalidCheckpoint("Unsupported checkpoint format. Record a new run in the current app version.")
     if payload["run_id"] != checkpoint["run_id"]:
         raise InvalidCheckpoint("Checkpoint ownership does not match its stored run.")
-    if payload["compatibility"] != compatibility():
+    domain = payload.get("domain", "retail")
+    if domain not in ("retail", "coding"):
+        raise InvalidCheckpoint("Unsupported checkpoint domain.")
+    if payload["compatibility"] != domains.compatibility(domain):
         raise InvalidCheckpoint("Incompatible checkpoint: simulator, application, policy, or Python version changed. Record a fresh run.")
     try:
-        environment = RetailEnvironment(payload["environment"])
+        environment = domains.restore_environment(domain, payload["environment"])
         if environment.schemas() != payload["tools"]:
             raise InvalidCheckpoint("Incompatible tool schemas. Record a fresh run.")
         environment.validate(payload["pending_action"])
@@ -61,8 +65,10 @@ def restore(checkpoint: dict) -> tuple[RetailEnvironment, dict]:
             raise ValueError("Unsupported agent configuration.")
         if config["kind"] == "live_meta" and not isinstance(config.get("model"), str):
             raise ValueError("Missing live model identity.")
-        if config["kind"] == "live_meta" and not {"base_url", "max_calls", "max_output_tokens", "timeout_seconds"}.issubset(config):
+        if config["kind"] == "live_meta" and not {"base_url", "max_calls", "max_output_tokens", "timeout_seconds", "reasoning_effort"}.issubset(config):
             raise ValueError("Missing live request configuration.")
+        if config["kind"] == "live_meta" and config["reasoning_effort"] not in {"minimal", "low", "medium", "high", "xhigh", "max"}:
+            raise ValueError("Unsupported live reasoning configuration.")
         if type(payload["event_boundary"]) is not int or payload["event_boundary"] < 0:
             raise ValueError("Invalid event boundary.")
         for message in payload["conversation"]:

@@ -1,5 +1,19 @@
 # Third-party software
 
+## QuickJS Emscripten
+
+- Runtime package: [quickjs-emscripten](https://www.npmjs.com/package/quickjs-emscripten),
+  pinned to `0.32.0` in the JavaScript lockfile.
+- Source: https://github.com/justjake/quickjs-emscripten
+- QuickJS: https://bellard.org/quickjs/
+- License: MIT; dependency distributions retain their own license files.
+
+The trusted app launcher invokes QuickJS compiled to WebAssembly. Candidate
+source is interpreted only in the guest. No Node, filesystem, network, process,
+or environment bridge is exposed. Runtime artifacts and launcher identity are
+included in coding compatibility metadata. The package maintainer notes that it
+has not been security audited; see [execution boundaries](docs/CODING_SANDBOX.md).
+
 ## tau2-bench — Sierra Research
 
 - Repository: https://github.com/sierra-research/tau2-bench
@@ -30,6 +44,11 @@ unavailable. Its third-party notices and research results were not inspected
 or copied.
 
 ## Application dependencies
+
+The source editor uses [CodeMirror 6](https://codemirror.net/) and its JavaScript
+language and One Dark theme packages, under the MIT license. Package versions
+are recorded in the JavaScript lockfile; installed packages retain their license
+files. The editor displays and edits text; it does not execute candidate source.
 
 React and React DOM, TypeScript, Vite, Lucide, Playwright, FastAPI, Uvicorn,
 Pydantic, httpx, pytest, and supporting packages retain their own licenses in

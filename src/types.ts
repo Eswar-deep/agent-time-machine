@@ -1,12 +1,21 @@
 export type Action = { tool: string; arguments: Record<string, unknown> };
+export type Domain = 'retail' | 'coding';
 export type Check = { id: string; label: string; status: string; detail: string; group: string };
 export type Outcome = { status: string; passed: number; total: number; checks: Check[]; scope: string };
+export type CommandResult = { kind?: 'command'; command: string[]; exit_code: number | null;
+  stdout: string; stderr: string; timed_out: boolean; error?: string };
+export type FileDiff = { path: string; before: string | null; after: string | null; unified_diff: string };
+export type Verification = { requirements_hash: string; protected_evaluator_hash: string; suite_version: string;
+  checks: Check[]; command: CommandResult | null; tamper_detected: boolean; error?: string };
+export type RetailSnapshot = { orders: Record<string, unknown>; users: Record<string, unknown>; products: Record<string, unknown> };
+export type CodingSnapshot = { fixture_id: string; files: Record<string, string>; tracked_files: string[];
+  execution_config: Record<string, unknown> };
 export type Usage = { calls: number; total_tokens: number | null; known_tokens: number;
   cost_usd: number | null; cost_status: string; unknown_usage_calls: number; latency_ms: number };
-export type Scenario = { id: string; title: string; category: string; description: string;
-  request: string; injected_failure: string; hint: string; customer: string; initials: string };
+export type Scenario = { id: string; domain?: Domain; title: string; category: string; description: string;
+  request: string; injected_failure: string; hint: string; customer?: string; initials?: string };
 export type RunSummary = { id: string; parent_id: string | null; created_at: string; scenario_id: string;
-  title: string; mode: string; injected_failure: boolean; execution: string; outcome: Outcome;
+  domain?: Domain; title: string; mode: string; injected_failure: boolean; execution: string; outcome: Outcome;
   elapsed_ms: number; usage: Usage; replay: null | { status: string; observations_match: boolean; state_match: boolean;
     tool_errors: number; mismatches: unknown[] } };
 export type RunEvent = { id: string; seq: number; kind: string; timestamp: string; inherited: boolean;
@@ -18,13 +27,14 @@ export type Change = { path: string; before: unknown; after: unknown; before_exi
 export type Run = RunSummary & { events: RunEvent[]; checkpoints: Boundary[]; error: string | null;
   patch: null | { before: Action; after: Action; provenance: { kind: string; failed_trace_access: boolean };
     context_rule: string; continuation: string };
-  state_changes: Change[]; compatibility: { commit: string }; model_calls: unknown[] };
+  state_changes: Change[]; compatibility: { commit?: string; simulator?: string }; model_calls: unknown[];
+  file_diffs?: FileDiff[]; verification?: Verification };
 export type Checkpoint = { id: string; run_id: string; sha256: string; payload: {
-  format_version: number; pending_action: Action; event_boundary: number; agent_state: { cursor: number };
+  domain?: Domain; format_version: number; pending_action: Action; event_boundary: number; agent_state: { cursor: number };
   conversation: { role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }[];
-  environment: { orders: Record<string, unknown>; users: Record<string, unknown>; products: Record<string, unknown> };
+  environment: RetailSnapshot | CodingSnapshot;
   tools: { function: { name: string; description: string; parameters: unknown } }[];
-  agent_config: { kind: string; model: string | null }; compatibility: { commit: string; application_hash: string };
+  agent_config: { kind: string; model: string | null }; compatibility: { commit?: string; application_hash: string };
 } };
 export type Health = { status: string; commit: string; validation_archive: string; model_ledger: Usage; meta: {
   available: boolean; blockers: string[]; model: string | null; max_calls: number; max_output_tokens: number;
@@ -32,7 +42,9 @@ export type Health = { status: string; commit: string; validation_archive: strin
 } };
 export type Comparison = { parent_id: string; branch_id: string; original_unchanged: boolean;
   parent_sha256: string; state_diff: Change[]; parent_outcome: Outcome; branch_outcome: Outcome;
-  parent_usage: Usage; branch_usage: Usage; parent_elapsed_ms: number; branch_elapsed_ms: number; scope: string };
+  parent_usage: Usage; branch_usage: Usage; parent_elapsed_ms: number; branch_elapsed_ms: number; scope: string;
+  file_diffs?: FileDiff[]; parent_file_diffs?: FileDiff[]; branch_file_diffs?: FileDiff[];
+  verification?: Verification; parent_verification?: Verification; branch_verification?: Verification };
 export type Proposal = { id: string; status: string; action: Action | null; explanation: string | null;
   failed_trace_access: boolean; error: string | null };
 

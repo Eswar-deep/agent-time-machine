@@ -2,13 +2,10 @@ import json
 import time
 from uuid import uuid4
 
-from .agent import demo_final, next_demo_action
+from . import domains
 from .checkpoints import capture, restore
-from .environment import POLICY, RetailEnvironment, compatibility
-from .evaluator import evaluate
 from .jsonutil import canonical, clone, digest, now, state_diff
 from .models import MetaClient, ModelFailure, aggregate_usage, bounded_integer, meta_status
-from .scenarios import initial_state, scenario
 from .store import Store
 
 
@@ -22,16 +19,17 @@ class Engine:
             status = meta_status()
             config.update({"model": status["model"], "base_url": status["base_url"],
                            "max_calls": status["max_calls"], "max_output_tokens": status["max_output_tokens"],
-                           "timeout_seconds": bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 30, 1, 60)})
+                           "reasoning_effort": status["reasoning_effort"],
+                           "timeout_seconds": bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 60, 1, 60)})
         return config
 
     def _new_run(self, scenario_id, mode, parent_id=None):
-        task = scenario(scenario_id)
+        task = domains.scenario(scenario_id)
         return {"id": "run_" + uuid4().hex, "parent_id": parent_id, "fork_checkpoint_id": None,
-                "created_at": now(), "scenario_id": scenario_id, "title": task["title"], "mode": mode,
+                "created_at": now(), "scenario_id": scenario_id, "domain": task["domain"], "title": task["title"], "mode": mode,
                 "injected_failure": False, "execution": "running", "error": None, "patch": None,
                 "events": [], "checkpoints": [], "model_calls": [], "replay": None,
-                "compatibility": compatibility(), "elapsed_ms": 0}
+                "compatibility": domains.compatibility(task["domain"]), "elapsed_ms": 0}
 
     def _event(self, run, kind, **data):
         event = {"id": "evt_" + uuid4().hex, "seq": len(run["events"]), "kind": kind,
@@ -45,11 +43,11 @@ class Engine:
         if mode == "live_meta" and not meta_status()["available"]:
             raise ModelFailure("Live Meta is unavailable. " + " ".join(meta_status()["blockers"]))
         run = self._new_run(scenario_id, mode)
-        environment = RetailEnvironment(initial_state())
+        environment = domains.fresh_environment(scenario_id)
         run["initial_state"] = environment.snapshot()
         run["injected_failure"] = mode == "deterministic_demo"
-        task = scenario(scenario_id)
-        messages = [{"role": "developer", "content": POLICY}, {"role": "user", "content": task["request"]}]
+        task = domains.scenario(scenario_id)
+        messages = [{"role": "developer", "content": domains.policy(run["domain"])}, {"role": "user", "content": task["request"]}]
         self._event(run, "user_message", content=task["request"], source="scenario")
         agent_state = {"cursor": 0, "inject_failure": mode == "deterministic_demo", "injection_consumed": False}
         config = self._agent_config(mode)
@@ -92,9 +90,9 @@ class Engine:
                            decision_source=run["patch"]["provenance"]["kind"])
             for _ in range(12):
                 if config["kind"] == "deterministic_demo":
-                    action = next_demo_action(run["scenario_id"], state, messages)
+                    action = domains.next_action(run.get("domain", "retail"), run["scenario_id"], state, messages)
                     if action is None:
-                        final = demo_final(messages)
+                        final = domains.final_message(run.get("domain", "retail"), messages)
                         messages.append({"role": "assistant", "content": final})
                         self._event(run, "agent_message", content=final, source="deterministic_demo")
                         run["execution"] = "completed"
@@ -113,8 +111,15 @@ class Engine:
                         self._event(run, "agent_message", content=message["content"], source="live_meta")
                         run["execution"] = "completed"
                         break
-                    if len(tool_calls) != 1 or message.get("content"):
-                        raise ModelFailure("This checkpoint format supports one tool action per turn and no simultaneous text.")
+                    if len(tool_calls) != 1:
+                        raise ModelFailure("This checkpoint format supports one tool action per turn.")
+                    if message.get("content"):
+                        # Preserve observable progress text before the action boundary.
+                        # The canonical tool-call message is added by _tool, so no
+                        # unresolved provider call or future result enters a snapshot.
+                        messages.append({"role": "assistant", "content": message["content"]})
+                        self._event(run, "agent_message", content=message["content"],
+                                    source="live_meta", phase="commentary")
                     function = tool_calls[0]["function"]
                     action = {"tool": function["name"], "arguments": json.loads(function["arguments"])}
                 self._tool(run, environment, messages, state, config, action, checkpoints)
@@ -127,12 +132,25 @@ class Engine:
             # Failed calls were logged immediately, even if no message returned.
             own_calls = list(proposal_calls or []) + [c for c in self.store.calls() if c["run_id"] == run["id"]
                                                       and c["purpose"] == "continuation"]
-        run["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        run["agent_elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
         run["final_state"] = environment.snapshot()
         run["conversation"] = clone(messages)
         run["model_calls"] = clone(own_calls)
         run["usage"] = aggregate_usage(own_calls)
-        run["outcome"] = evaluate(run["scenario_id"], run["initial_state"], run["final_state"], run["events"], run["execution"])
+        try:
+            run["outcome"] = domains.evaluate(run, environment)
+            if run.get("domain") == "coding" and not run.get("verification", {}).get("completed"):
+                self._event(run, "execution_error", content=run["error"], source="protected_evaluator")
+        except Exception as error:
+            run["execution"] = "failed"
+            run["error"] = "Verification unavailable: " + str(error)
+            self._event(run, "execution_error", content=run["error"], source="protected_evaluator")
+            run["outcome"] = {"status": "failed", "passed": 0, "total": 1, "checks": [
+                {"id": "verification", "label": "Protected verification completed", "status": "failed",
+                 "detail": run["error"], "group": "execution"}],
+                "scope": "Verification did not complete; no successful outcome is claimed."}
+        run["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        run["verification_elapsed_ms"] = round(run["elapsed_ms"] - run["agent_elapsed_ms"], 2)
         run["state_changes"] = state_diff(run["initial_state"], run["final_state"])
         self.store.save_run(run, checkpoints)
         return run
@@ -183,11 +201,12 @@ class Engine:
 
     def replay(self, run_id: str) -> dict:
         parent = self.store.run(run_id)
-        if parent["compatibility"] != compatibility():
+        domain = parent.get("domain", "retail")
+        if parent["compatibility"] != domains.compatibility(domain):
             raise ValueError("Incompatible saved run. Record a new run before replaying with the current simulator.")
         run = self._new_run(parent["scenario_id"], "unchanged_replay", run_id)
         run["parent_sha256"] = digest(parent)
-        environment = RetailEnvironment(parent["initial_state"])
+        environment = domains.restore_environment(domain, parent["initial_state"])
         run["initial_state"] = environment.snapshot()
         run["injected_failure"] = parent["injected_failure"]
         started = time.perf_counter()
@@ -200,9 +219,11 @@ class Engine:
                 observation = environment.execute(action)
                 self._event(run, "tool", **action, observation=observation, source="unchanged_replay",
                             latency_ms=round((time.perf_counter() - tool_started) * 1000, 2), checkpoint_id=None)
-                if observation != event["observation"]:
+                observed = domains.comparable_observation(domain, observation)
+                recorded = domains.comparable_observation(domain, event["observation"])
+                if observed != recorded:
                     mismatches.append({"event_seq": event["seq"], "tool": event["tool"],
-                                       "differences": state_diff(event["observation"], observation)})
+                                       "differences": state_diff(recorded, observed)})
                 tool_errors += not observation["ok"]
             elif event["kind"] in ("user_message", "agent_message"):
                 self._event(run, event["kind"], content=event["content"], source="recorded_playback")
@@ -221,6 +242,8 @@ class Engine:
         run["outcome"] = {"status": "not_evaluated", "passed": 0, "total": 0, "checks": [],
                           "scope": "Tool replay checks observations/state only. Messages are recorded playback, not fresh model output."}
         run["state_changes"] = state_diff(run["initial_state"], run["final_state"])
+        if domain == "coding":
+            run["file_diffs"] = domains.coding.file_diffs(run["initial_state"]["files"], run["final_state"]["files"])
         self.store.save_run(run, [])
         return run
 
@@ -229,13 +252,20 @@ class Engine:
         if not branch["parent_id"]:
             raise ValueError("Select a branch to compare with its parent.")
         parent = self.store.run(branch["parent_id"])
-        return {"parent_id": parent["id"], "branch_id": branch_id, "patch": branch["patch"],
+        result = {"parent_id": parent["id"], "branch_id": branch_id, "patch": branch["patch"],
                 "parent_sha256": digest(parent), "original_unchanged": branch.get("parent_sha256") == digest(parent),
                 "state_diff": state_diff(parent["final_state"], branch["final_state"]),
                 "parent_outcome": parent["outcome"], "branch_outcome": branch["outcome"],
                 "parent_usage": parent["usage"], "branch_usage": branch["usage"],
                 "parent_elapsed_ms": parent["elapsed_ms"], "branch_elapsed_ms": branch["elapsed_ms"],
                 "scope": "An intervention result in this sandbox; not a unique root-cause diagnosis."}
+        if branch.get("domain") == "coding":
+            result.update({"file_diffs": domains.coding.file_diffs(parent["final_state"]["files"], branch["final_state"]["files"]),
+                           "parent_file_diffs": parent.get("file_diffs", []), "branch_file_diffs": branch.get("file_diffs", []),
+                           "parent_verification": parent.get("verification"),
+                           "branch_verification": branch.get("verification"),
+                           "scope": "Frozen coding checks on actual isolated executions. This does not establish general coding-agent recovery."})
+        return result
 
     def propose(self, run_id: str, checkpoint_id: str) -> dict:
         parent = self.store.run(run_id)
@@ -252,9 +282,9 @@ class Engine:
             {"role": "developer", "content": "You are a separate repair proposer. You may inspect the failed trace, "
              "including events after the checkpoint. Propose exactly one replacement tool call. "
              "Return a JSON object with exactly tool (string), arguments (object), explanation (string citing actual observations). "
-             "Use only the supplied tools and the customer's actual instructions. "
+             "Use only the supplied tools and the user's actual task instructions. "
              "No grader, expected trajectory, or hidden reasoning is available. Do not claim a unique root cause."},
-            {"role": "user", "content": canonical({"request": scenario(parent["scenario_id"])["request"],
+            {"role": "user", "content": canonical({"request": domains.scenario(parent["scenario_id"])["request"],
              "pending_action": payload["pending_action"], "recorded_trace": parent["events"],
              "allowed_tools": environment.schemas()})},
         ]

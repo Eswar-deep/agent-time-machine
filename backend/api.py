@@ -15,10 +15,11 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 from .checkpoints import restore  # noqa: E402
+from . import domains  # noqa: E402
+from .coding_runtime import SandboxUnavailable, runtime_signature  # noqa: E402
 from .engine import Engine  # noqa: E402
 from .environment import COMMIT  # noqa: E402
 from .models import ModelFailure, aggregate_usage, meta_status  # noqa: E402
-from .scenarios import SCENARIOS  # noqa: E402
 from .store import NotFound, Store  # noqa: E402
 
 
@@ -48,10 +49,10 @@ class ValidateCheckpoint(Input):
 
 
 def summary(run):
-    return {key: run[key] for key in (
+    return {"domain": run.get("domain", "retail"), **{key: run[key] for key in (
         "id", "parent_id", "created_at", "scenario_id", "title", "mode",
         "injected_failure", "execution", "outcome", "elapsed_ms", "usage", "replay",
-    )}
+    )}}
 
 
 def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI:
@@ -60,8 +61,11 @@ def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI
 
     @asynccontextmanager
     async def lifespan(_app):
-        if seed and not store.list_runs():
-            engine.create("cancel-order")
+        if seed and not any(run.get("domain") == "coding" for run in store.list_runs()):
+            try:
+                engine.create("coding-date-parser")
+            except (SandboxUnavailable, ValueError) as error:
+                _app.state.coding_startup_error = str(error)
         yield
 
     app = FastAPI(title="Agent Time Machine", version="0.1.0", lifespan=lifespan)
@@ -91,19 +95,28 @@ def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI
     async def model_failure(_request, error):
         return JSONResponse(status_code=409, content={"detail": str(error)})
 
+    @app.exception_handler(SandboxUnavailable)
+    async def sandbox_failure(_request, error):
+        return JSONResponse(status_code=409, content={"detail": str(error)})
+
     @app.exception_handler(ValueError)
     async def invalid(_request, error):
         return JSONResponse(status_code=422, content={"detail": str(error)})
 
     @app.get("/api/health")
     def health():
-        return {"status": "ready", "simulator": "Pinned tau2 retail tools", "commit": COMMIT,
+        try:
+            coding = {"available": True, "runtime": runtime_signature(), "primary_scenario": "coding-date-parser"}
+        except Exception as error:
+            coding = {"available": False, "reason": str(error)}
+        return {"status": "ready", "simulator": "Coding WASM sandbox + pinned tau2 retail tools", "commit": COMMIT,
+                "coding": coding,
                 "meta": meta_status(), "validation_archive": "not_available",
                 "model_ledger": aggregate_usage(store.calls())}
 
     @app.get("/api/scenarios")
     def scenarios():
-        return list(SCENARIOS.values())
+        return domains.catalog()
 
     @app.get("/api/runs")
     def runs():

@@ -1,0 +1,120 @@
+.atm-source-editor {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 280px;
+  overflow: hidden;
+  text-align: left;
+  background: var(--editor-bg, #fff);
+}
+
+.atm-source-editor[data-theme="dark"] {
+  background: var(--editor-bg, #14181f);
+}
+
+.atm-source-editor .cm-editor {
+  height: 100%;
+  min-height: inherit;
+  border-radius: inherit;
+  background: var(--editor-bg, #fff);
+}
+
+.atm-source-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.atm-source-editor:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent, #8c9dff);
+}
+
+.atm-source-editor .cm-scroller {
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.atm-source-editor .cm-content {
+  cursor: text;
+}
+
+.atm-source-editor .cm-gutters {
+  user-select: none;
+  background: var(--editor-gutter, #f8f9fc);
+  border-right-color: var(--line, #e6e8f0);
+  color: var(--faint, #758397);
+}
+
+.atm-source-editor[data-theme="dark"] .cm-editor { background: var(--editor-bg, #14181f); }
+.atm-source-editor[data-theme="dark"] .cm-content { caret-color: #a6b3ff; }
+.atm-source-editor[data-theme="dark"] .cm-cursor { border-left-color: #a6b3ff; }
+.atm-source-editor[data-theme="dark"] .cm-activeLine { background: #26314738; }
+.atm-source-editor[data-theme="dark"] .cm-activeLineGutter { background: #26314770; color: #bcc8dd; }
+.atm-source-editor[data-theme="dark"] .cm-selectionBackground,
+.atm-source-editor[data-theme="dark"] .cm-editor.cm-focused .cm-selectionBackground { background: #45578388; }
+.atm-source-editor[data-theme="dark"] .cm-panels { background: var(--panel-soft, #1b2028); color: #d0d8e5; }
+.atm-source-editor[data-theme="dark"] .cm-tooltip { background: #202632; border-color: #3c4655; }
+
+.atm-source-editor .cm-foldGutter .cm-gutterElement {
+  cursor: pointer;
+}
+
+.atm-source-editor .cm-panels {
+  font: 12px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+
+.atm-source-editor .cm-search {
+  padding: 10px 36px 10px 12px;
+}
+
+.atm-source-editor .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.atm-source-editor .cm-search .cm-textfield {
+  max-width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--line, #d5d8e4);
+  border-radius: 4px;
+  background: #fff;
+  color: #343447;
+  font: inherit;
+}
+
+.atm-source-editor .cm-search .cm-button {
+  padding: 4px 8px;
+  border: 1px solid #d5d8e4;
+  border-radius: 4px;
+  background: #fff;
+  color: #45475c;
+  font: inherit;
+  cursor: pointer;
+}
+
+.atm-source-editor .cm-search .cm-button:focus-visible,
+.atm-source-editor .cm-search .cm-textfield:focus-visible {
+  outline: 2px solid var(--accent, #8c9dff);
+  outline-offset: 2px;
+}
+
+.atm-source-editor[data-theme="dark"] .cm-search .cm-textfield,
+.atm-source-editor[data-theme="dark"] .cm-search .cm-button {
+  border-color: #3d4859;
+  background: #14181f;
+  color: #e1e5ed;
+}
+
+.atm-source-editor .cm-tooltip-autocomplete {
+  font: 12px/1.6 "SFMono-Regular", Consolas, monospace;
+}
+
+.atm-source-editor .cm-tooltip-autocomplete ul {
+  max-width: min(520px, 75vw);
+}
+
+@media (max-width: 700px) {
+  .atm-source-editor { min-height: 320px; }
+  .atm-source-editor .cm-scroller { font-size: 12px; }
+  .atm-source-editor .cm-search .cm-textfield { max-width: 170px; }
+}
