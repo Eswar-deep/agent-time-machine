@@ -34,22 +34,20 @@ no model calls. The first startup saves a default coding run. Later launches
 can use `./scripts/start.ps1` after building. See [setup](docs/SETUP.md) for
 development mode, other platforms, configuration, and persistence.
 
-## Playground: compare two agent configurations
+## Playground: compare the demo with a live Meta agent
 
-Open **Playground**, enter a variant instruction, and run the experiment. Both arms use
-the same date-parser fixture, live Meta model, protected checks, and provider call
-allowance. The variant receives the additional instruction as a change in approach.
+Open **Playground** and select **Compare demo and Meta**. Both runs start from the
+same date-parser fixture, receive the same task, and use the same protected tests.
 
-The runtime permits edits only to the parser. A separate Meta supervisor call reviews
-eligible edits before execution. A denied or unavailable review stops the run before the
-edit. Each arm reserves one provider call for a rubric assessment that cites execution
-evidence. The existing protected tests still decide the checked task outcome.
+- **Deterministic demo** runs a scripted sequence that deliberately introduces
+  a regression. Its tools and tests execute locally with zero API calls.
+- **Live Meta agent** makes fresh decisions using the existing server-side Meta
+  API key and the configured per-run provider call allowance.
 
-The comparison includes tool calls, blocked actions, elapsed time, tokens, and cost at
-configured rates. Supervisor calls count against the same allowance as agent calls.
-Open either saved run to inspect its timeline and fork a checkpoint under the same policy.
-Live Meta configuration is required. Each comparison can use up to twice the configured
-per-run provider call allowance.
+The comparison shows test results, tool calls, elapsed time, tokens, and cost at
+configured rates. Open either run to inspect its timeline and checkpoints.
+The demo is a known failure example, so this comparison does not measure a
+quality advantage over another model.
 
 ## Main workflow: ask Meta to propose a repair
 

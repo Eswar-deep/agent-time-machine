@@ -1,66 +1,50 @@
 import { FlaskConical, Play } from 'lucide-react';
-import type { Experiment, Health } from '../types';
+import type { DemoComparison, Health } from '../types';
 
-const labels: Record<string, string> = {
-  task_outcome: 'Task outcome',
-  boundaries: 'Boundary compliance',
-  completion_claim: 'Accuracy of completion claim',
-};
-
-export default function Playground({ health, instruction, onInstruction, experiment, busy, onRun, onInspect }: {
+export default function Playground({ health, comparison, busy, onRun, onInspect }: {
   health: Health | null;
-  instruction: string;
-  onInstruction: (value: string) => void;
-  experiment: Experiment | null;
+  comparison: DemoComparison | null;
   busy: boolean;
   onRun: () => void;
   onInspect: (id: string) => void;
 }) {
-  const available = !!health?.meta.available && health.meta.max_calls >= 2;
+  const available = !!health?.meta.available;
+  const runs = comparison && [
+    { title: 'Deterministic demo', run: comparison.demo, detail: 'Scripted run with a deliberately injected regression.' },
+    { title: 'Live Meta agent', run: comparison.meta, detail: 'Fresh agent decisions from the configured Meta model.' },
+  ];
+
   return <section className="panel playground-panel">
     <div className="panel-header">
-      <div><h1>Agent playground</h1><p>Compare two live coding runs on the same date-parser task.</p></div>
+      <div><h1>Agent playground</h1><p>Run the same coding task in two modes.</p></div>
       <FlaskConical size={18} />
     </div>
     <div className="playground-body">
-      <p>Both runs start from the same fixture and use the same Meta model, protected checks, and call allowance.
-        The variant receives one additional instruction.</p>
-      <form onSubmit={event => { event.preventDefault(); onRun(); }}>
-        <label htmlFor="variant-instruction">Variant instruction</label>
-        <textarea id="variant-instruction" value={instruction} maxLength={1200}
-          disabled={busy} onChange={event => onInstruction(event.target.value)} />
-        <p className="muted">The runtime allows edits only to the parser. A separate Meta supervisor reviews eligible
-          edits and evaluates each outcome. Its calls count toward the same run allowance.</p>
-        <button type="submit" className="button primary" disabled={busy || !available || !instruction.trim()}>
-          <Play size={14} /> Run experiment
-        </button>
-        {!available && <p className="muted">Configure live Meta with at least two allowed calls per run.
-          {health?.meta.blockers.length ? ' ' + health.meta.blockers.join(' ') : ''}</p>}
-        {available && <p className="muted">Up to {health.meta.max_calls} provider calls per run, including one reserved
-          for evaluation. Running an experiment starts two runs.</p>}
-      </form>
-      {experiment && <div className="playground-results" aria-label="Experiment results">
-        {(['baseline', 'variant'] as const).map(key => {
-          const arm = experiment[key];
-          return <article key={arm.id}>
-            <h2>{key === 'baseline' ? 'Baseline' : 'Variant'}</h2>
+      <p>Both runs start from the same parser files and use the same protected tests.
+        The demo runs locally. The live agent uses your existing Meta API key.</p>
+      <button type="button" className="button primary" disabled={busy || !available} onClick={onRun}>
+        <Play size={14} /> Compare demo and Meta
+      </button>
+      {!available && <p className="muted">Live Meta configuration is required for the comparison.
+        {health?.meta.blockers.length ? ' ' + health.meta.blockers.join(' ') : ''}</p>}
+      {available && <p className="muted">Live run: {health.meta.model} · up to {health.meta.max_calls} provider calls.</p>}
+      {runs && <div className="playground-results" aria-label="Comparison results">
+        {runs.map(({ title, run, detail }) => <article key={title}>
+          <h2>{title}</h2>
+          <p className="muted">{detail}</p>
+          {run ? <>
             <dl>
-              <dt>Scenario checks</dt><dd>{arm.outcome.passed}/{arm.outcome.total} · {arm.outcome.status === 'passed_checks' ? 'Passed' : 'Failed'}</dd>
-              <dt>Blocked actions</dt><dd>{arm.blocked_actions}</dd>
-              <dt>Tool calls</dt><dd>{arm.tool_calls}</dd>
-              <dt>Elapsed time</dt><dd>{(arm.elapsed_ms / 1000).toFixed(2)} s</dd>
-              <dt>Provider calls</dt><dd>{arm.usage.calls}</dd>
-              <dt>Tokens</dt><dd>{arm.usage.total_tokens ?? 'Unknown'}</dd>
-              <dt>Cost at configured rates</dt><dd>{arm.usage.cost_usd == null ? 'Unknown' : '$' + arm.usage.cost_usd.toFixed(5)}</dd>
+              <dt>Scenario checks</dt><dd>{run.outcome.passed}/{run.outcome.total} · {run.outcome.status === 'passed_checks' ? 'Passed' : 'Failed'}</dd>
+              <dt>Tool calls</dt><dd>{run.events.filter(event => event.kind === 'tool').length}</dd>
+              <dt>Elapsed time</dt><dd>{(run.elapsed_ms / 1000).toFixed(2)} s</dd>
+              <dt>Provider calls</dt><dd>{run.usage.calls}</dd>
+              <dt>Tokens</dt><dd>{run.usage.total_tokens ?? 'Unknown'}</dd>
+              <dt>Cost at configured rates</dt><dd>{run.usage.calls === 0 ? 'No API calls' : run.usage.cost_usd == null ? 'Unknown' : '$' + run.usage.cost_usd.toFixed(5)}</dd>
             </dl>
-            <h3>Supervisor assessment</h3>
-            {arm.supervision.status === 'completed' ? <ul>{Object.entries(arm.supervision.rubric).map(([id, criterion]) =>
-              <li key={id}><strong>{labels[id]} · {criterion.status}</strong>
-                <p>{criterion.reason}</p><small>Evidence: {criterion.evidence.join(', ')}</small></li>)}</ul>
-              : <p>Supervisor assessment unavailable. Protected check results are shown above.</p>}
-            <button className="button secondary" onClick={() => onInspect(arm.id)} disabled={busy}>Inspect run and checkpoints</button>
-          </article>;
-        })}
+            {run.error && <p role="status">{run.error}</p>}
+            <button className="button secondary" onClick={() => onInspect(run.id)} disabled={busy}>Inspect run and checkpoints</button>
+          </> : <p>{busy ? 'Waiting for the live run…' : 'Live run unavailable.'}</p>}
+        </article>)}
       </div>}
     </div>
   </section>;
