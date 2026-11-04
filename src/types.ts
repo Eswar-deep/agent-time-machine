@@ -19,7 +19,7 @@ export type RunSummary = { id: string; parent_id: string | null; created_at: str
   elapsed_ms: number; usage: Usage; replay: null | { status: string; observations_match: boolean; state_match: boolean;
     tool_errors: number; mismatches: unknown[] } };
 export type RunEvent = { id: string; seq: number; kind: string; timestamp: string; inherited: boolean;
-  source: string; content?: string; tool?: string; arguments?: Record<string, unknown>;
+  source: string; decision?: 'allow' | 'block'; content?: string; tool?: string; arguments?: Record<string, unknown>;
   checkpoint_id?: string | null; observation?: { ok: boolean; value?: unknown; error?: { type: string; message: string } };
   latency_ms?: number; model?: string; usage?: { total_tokens: number } | null };
 export type Boundary = { id: string; sha256: string; event_boundary: number; tool: string; step: number };
@@ -57,3 +57,9 @@ export type Proposal = { id: string; run_id?: string; checkpoint_id?: string | n
   model_calls?: ModelCall[]; usage?: Usage; elapsed_ms?: number; error: string | null;
   provenance?: { provider: string; api_surface: string; model: string; endpoint: string; role: string } };
 
+
+export type SupervisorCriterion = { status: 'pass' | 'fail' | 'uncertain'; reason: string; evidence: string[] };
+export type ExperimentArm = RunSummary & { tool_calls: number; blocked_actions: number;
+  supervision: { status: 'completed'; rubric: Record<string, SupervisorCriterion> } |
+    { status: 'unavailable'; error: string } };
+export type Experiment = { id: string; baseline: ExperimentArm; variant: ExperimentArm };

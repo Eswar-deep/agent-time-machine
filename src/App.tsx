@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import SourceEditor from './components/SourceEditor';
 import RepairReview from './components/RepairReview';
-import type { Action, Change, Checkpoint, CommandResult, Comparison, FileDiff, Health, Outcome, Proposal, Run, RunEvent, RunSummary, Scenario, Usage, Verification } from './types';
+import Playground from './components/Playground';
+import type { Action, Change, Checkpoint, CommandResult, Comparison, Experiment, FileDiff, Health, Outcome, Proposal, Run, RunEvent, RunSummary, Scenario, Usage, Verification } from './types';
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch('/api' + path, body === undefined ? undefined :
@@ -155,12 +156,13 @@ function EventCard({ event, selected, onSelect, coding = false, disabled = false
   const user = event.kind === 'user_message';
   const error = event.kind === 'execution_error';
   const model = event.kind === 'model_call';
+  const review = event.kind === 'policy_review';
   const command = asCommand(event.observation?.value);
   const toolFailed = !event.observation?.ok || !!command && (command.exit_code !== 0 || command.timed_out);
-  const label = tool ? event.tool : user ? coding ? 'Developer task' : 'Customer request' : error ? 'Execution stopped' : model ? 'Meta model call' : 'Agent response';
+  const label = review ? (event.decision === 'block' ? 'Action blocked' : 'Edit approved') : tool ? event.tool : user ? coding ? 'Developer task' : 'Customer request' : error ? 'Execution stopped' : model ? 'Meta model call' : 'Agent response';
   const summary = tool ? Object.entries(event.arguments || {}).map(([key, value]) => key === 'content' && coding && typeof value === 'string' ? value.split('\n').length + ' lines of source' : key + ': ' + displayValue(value)).join('  ·  ') : event.content;
-  const canSelect = tool && !!event.checkpoint_id && !event.inherited;
-  const Icon = tool ? Terminal : user ? MessageSquare : error ? XCircle : model ? Sparkles : Workflow;
+  const canSelect = (tool || review) && !!event.checkpoint_id && !event.inherited;
+  const Icon = review ? ShieldCheck : tool ? Terminal : user ? MessageSquare : error ? XCircle : model ? Sparkles : Workflow;
   const contents = <>
     <span className="event-top"><span className={tool ? 'tool-name' : 'event-name'}>{label}</span>
       <span className="event-step">{String(event.seq + 1).padStart(2, '0')}</span></span>
@@ -176,7 +178,7 @@ function EventCard({ event, selected, onSelect, coding = false, disabled = false
       {event.inherited && tool && <span className="inherited-label">Inherited</span>}
     </span>
   </>;
-  if (!tool) return <details className={'message-event ' + (error ? 'error-event' : '')} open={error}>
+  if (!tool && !review) return <details className={'message-event ' + (error ? 'error-event' : '')} open={error}>
     <summary><Icon size={14} /><span>{label}</span><ChevronDown size={12} /></summary>
     <p>{model ? event.model + ' · ' + (event.usage?.total_tokens ?? 'unknown') + ' tokens' : event.content}</p>
     <small>{event.source === 'recorded_playback' ? 'Recorded playback' : modeName(event.source)}</small>
@@ -211,6 +213,10 @@ export default function App() {
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [inspectorTab, setInspectorTab] = useState('intervene');
   const [view, setView] = useState('workspace');
+  const [experiment, setExperiment] = useState<Experiment | null>(null);
+  const [variantInstruction, setVariantInstruction] = useState(
+    'Inspect the parser and its visible tests before editing. Make one targeted fix, then run the tests.');
+
   const [workspaceMode, setWorkspaceMode] = useState('inspect');
   const [traceExpanded, setTraceExpanded] = useState(false);
   const [evidenceTab, setEvidenceTab] = useState('checks');
@@ -351,6 +357,15 @@ export default function App() {
     finally { setBusy(''); }
   }
 
+  async function runExperiment() {
+    await perform('Running baseline and variant', async () => {
+      setExperiment(null);
+      const result = await api<Experiment>('/experiments', { variant_instruction: variantInstruction });
+      setExperiment(result);
+      await refresh();
+    });
+  }
+
   async function newRun() {
     await perform('Running scenario', async () => {
       const next = await api<Run>('/runs', { scenario_id: selectedScenario, mode: runMode });
@@ -466,6 +481,7 @@ export default function App() {
       <a className="rail-brand" href="#" aria-label="Agent Time Machine workspace" onClick={e => { e.preventDefault(); setView('workspace'); }}><Mark /></a>
       <nav className="main-nav" aria-label="Main navigation">
         <button title="Debugger" aria-label="Debugger" className={view === 'workspace' ? 'active' : ''} onClick={() => setView('workspace')}><Workflow size={20} /></button>
+        <button title="Playground" aria-label="Playground" className={view === 'playground' ? 'active' : ''} onClick={() => setView('playground')}><FlaskConical size={20} /></button>
         <button title="Run history" aria-label="Run history" className={view === 'runs' ? 'active' : ''} onClick={() => setView('runs')}><History size={20} /></button>
       </nav>
       <div className="rail-bottom">
@@ -475,13 +491,16 @@ export default function App() {
       </div>
     </aside>
     <div inert={guide} className="main-shell">
-      <header className="topbar"><div className="app-title"><strong>Time Machine</strong><span>/</span><span>{view === 'runs' ? 'Run history' : 'Agent debugger'}</span></div>
+      <header className="topbar"><div className="app-title"><strong>Time Machine</strong><span>/</span><span>{view === 'playground' ? 'Playground' : view === 'runs' ? 'Run history' : 'Agent debugger'}</span></div>
         <div className="topbar-right"><span className="connection"><span className={'tiny-dot ' + (health ? 'green-dot' : '')} />{health ? 'Local workspace' : 'Connecting…'}</span><span className="topbar-divider" /><button className="text-button" onClick={openGuide}>Quick guide<ArrowUpRight size={13} /></button></div>
       </header>
       <main>
         {error && <div className="alert error-alert" role="alert"><XCircle size={18} /><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError(null)}><X size={16} /></button></div>}
         {busy && <div className="busy-bar" role="status"><LoaderCircle size={14} className="spin" />{busy}…</div>}
-        {view === 'runs' ? <section className="panel history-panel"><div className="panel-header"><div><h1>Saved runs</h1><p>Every original, alternative, and failed attempt.</p></div><span className="muted">{runs.length} total</span></div>
+        {view === 'playground' ? <Playground health={health} instruction={variantInstruction} onInstruction={setVariantInstruction}
+          experiment={experiment} busy={!!busy} onRun={() => void runExperiment()}
+          onInspect={id => void perform('Opening experiment run', () => loadRun(id))} />
+        : view === 'runs' ? <section className="panel history-panel"><div className="panel-header"><div><h1>Saved runs</h1><p>Every original, alternative, and failed attempt.</p></div><span className="muted">{runs.length} total</span></div>
           <div className="history-table"><div className="history-table-head"><span>Run</span><span>Execution mode</span><span>Outcome</span><span>Created</span><span /></div>
             {runs.map(item => <button className="history-table-row" key={item.id} disabled={!!busy} onClick={() => void perform('Opening saved run', () => loadRun(item.id))}>
               <span className="history-title">{item.replay ? <RotateCcw size={16} /> : item.parent_id ? <GitBranch size={16} /> : <Workflow size={16} />}<span>{item.title}<small>{shortId(item.id)} · {item.replay ? 'Replay' : item.parent_id ? 'Branch' : 'Original'}</small></span></span>

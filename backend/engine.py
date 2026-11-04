@@ -6,6 +6,7 @@ from . import domains
 from .checkpoints import capture, restore
 from .jsonutil import canonical, clone, digest, now, state_diff
 from .models import MetaClient, ModelFailure, aggregate_usage, bounded_integer, meta_status
+from .playground import POLICY as PLAYGROUND_POLICY, Supervisor, hard_block
 from .redaction import redact_credentials
 from .store import Store
 
@@ -14,7 +15,7 @@ class Engine:
     def __init__(self, store: Store):
         self.store = store
 
-    def _agent_config(self, kind):
+    def _agent_config(self, kind, playground=False):
         config = {"kind": kind, "model": None}
         if kind == "live_meta":
             status = meta_status()
@@ -22,6 +23,8 @@ class Engine:
                            "max_calls": status["max_calls"], "max_output_tokens": status["max_output_tokens"],
                            "reasoning_effort": status["reasoning_effort"],
                            "timeout_seconds": bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 60, 1, 60)})
+        if playground:
+            config["playground"] = True
         return config
 
     def _model_role(self, kind, role="continuing_agent"):
@@ -47,7 +50,7 @@ class Engine:
         run["events"].append(event)
         return event
 
-    def create(self, scenario_id: str, mode: str = "deterministic_demo") -> dict:
+    def create(self, scenario_id: str, mode: str = "deterministic_demo", experiment=None) -> dict:
         if mode not in ("deterministic_demo", "live_meta"):
             raise ValueError("Choose deterministic_demo or live_meta.")
         if mode == "live_meta" and not meta_status()["available"]:
@@ -58,23 +61,68 @@ class Engine:
         run["injected_failure"] = mode == "deterministic_demo"
         task = domains.scenario(scenario_id)
         messages = [{"role": "developer", "content": domains.policy(run["domain"])}, {"role": "user", "content": task["request"]}]
+        if experiment is not None:
+            run["experiment"] = clone(experiment)
+            messages[0]["content"] += "\n" + PLAYGROUND_POLICY
+            if experiment["instruction"]:
+                messages.append({"role": "user", "content": experiment["instruction"]})
         self._event(run, "user_message", content=task["request"], source="scenario")
+        if experiment and experiment["instruction"]:
+            self._event(run, "user_message", content=experiment["instruction"], source="experiment")
         agent_state = {"cursor": 0, "inject_failure": mode == "deterministic_demo", "injection_consumed": False}
-        config = self._agent_config(mode)
+        config = self._agent_config(mode, playground=experiment is not None)
         return self._drive(run, environment, messages, agent_state, config)
+
+    def experiment(self, scenario_id, variant_instruction):
+        if domains.scenario(scenario_id)["domain"] != "coding":
+            raise ValueError("The playground currently supports coding scenarios.")
+        if not variant_instruction.strip():
+            raise ValueError("Enter an instruction to test in the variant.")
+        status = meta_status()
+        if not status["available"] or status["max_calls"] < 2:
+            raise ModelFailure("The playground needs live Meta and at least two allowed calls per run. "
+                               + " ".join(status["blockers"]))
+        variant_instruction = redact_credentials(variant_instruction.strip())
+        experiment_id = "exp_" + uuid4().hex
+        baseline = self.create(scenario_id, "live_meta",
+                               {"id": experiment_id, "arm": "baseline", "instruction": ""})
+        variant = self.create(scenario_id, "live_meta",
+                              {"id": experiment_id, "arm": "variant", "instruction": variant_instruction})
+        return {"id": experiment_id, "baseline": baseline, "variant": variant}
 
     def checkpoint(self, checkpoint_id: str) -> dict:
         checkpoint = self.store.checkpoint(checkpoint_id)
         restore(checkpoint)
         return checkpoint
 
-    def _tool(self, run, environment, messages, state, config, pending, checkpoints, decision_source=None):
+    def _tool(self, run, environment, messages, state, config, pending, checkpoints,
+              decision_source=None, supervisor=None):
+        if supervisor and state["cursor"] >= 12:
+            raise RuntimeError("Step allowance exhausted. Run is incomplete.")
         pending = environment.validate(pending)
         checkpoint = capture(run, environment, messages, pending, state, config, len(run["events"]))
         checkpoints.append(checkpoint)
         run["checkpoints"].append({"id": checkpoint["id"], "sha256": checkpoint["sha256"],
                                    "event_boundary": len(run["events"]), "tool": pending["tool"],
                                    "step": state["cursor"] + 1})
+        if supervisor:
+            reason = hard_block(pending)
+            source = "runtime_policy"
+            if reason is None and pending["tool"] == "write_file":
+                source = "meta_supervisor"
+                try:
+                    review = supervisor.review(domains.scenario(run["scenario_id"])["request"], pending)
+                except Exception as error:
+                    reason = "Supervisor review unavailable: " + type(error).__name__
+                else:
+                    reason = review.reason if review.decision == "block" else None
+                    if reason is None:
+                        self._event(run, "policy_review", source=source, decision="allow",
+                                    content=review.reason, tool=pending["tool"], checkpoint_id=checkpoint["id"])
+            if reason is not None:
+                self._event(run, "policy_review", source=source, decision="block",
+                            content=reason, tool=pending["tool"], checkpoint_id=checkpoint["id"])
+                raise RuntimeError(reason)
         call_id = "tool_" + uuid4().hex
         assistant = {"role": "assistant", "content": None, "tool_calls": [{
             "id": call_id, "type": "function", "function": {
@@ -94,10 +142,13 @@ class Engine:
         checkpoints = []
         started = time.perf_counter()
         own_calls = list(proposal_calls or [])
+        supervisor = Supervisor(self.store, run["id"], config["max_calls"], own_calls) if config.get("playground") else None
+        if supervisor:
+            run["model_roles"]["supervisor"] = self._model_role("live_meta", "supervisor")
         try:
             if first_action is not None:
                 self._tool(run, environment, messages, state, config, first_action, checkpoints,
-                           decision_source=run["patch"]["provenance"]["kind"])
+                           decision_source=run["patch"]["provenance"]["kind"], supervisor=supervisor)
             for _ in range(12):
                 if config["kind"] == "deterministic_demo":
                     action = domains.next_action(run.get("domain", "retail"), run["scenario_id"], state, messages)
@@ -108,6 +159,8 @@ class Engine:
                         run["execution"] = "completed"
                         break
                 else:
+                    if supervisor:
+                        supervisor.require_execution_budget()
                     message, call = MetaClient(self.store).complete(
                         messages, environment.schemas(), run["id"], "continuation", len(own_calls))
                     own_calls.append(call)
@@ -132,7 +185,7 @@ class Engine:
                                     source="live_meta", phase="commentary")
                     function = tool_calls[0]["function"]
                     action = {"tool": function["name"], "arguments": json.loads(function["arguments"])}
-                self._tool(run, environment, messages, state, config, action, checkpoints)
+                self._tool(run, environment, messages, state, config, action, checkpoints, supervisor=supervisor)
             else:
                 raise RuntimeError("Step allowance exhausted. Run is incomplete.")
         except Exception as error:
@@ -145,8 +198,6 @@ class Engine:
         run["agent_elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
         run["final_state"] = environment.snapshot()
         run["conversation"] = clone(messages)
-        run["model_calls"] = clone(own_calls)
-        run["usage"] = aggregate_usage(own_calls)
         try:
             run["outcome"] = domains.evaluate(run, environment)
             if run.get("domain") == "coding" and not run.get("verification", {}).get("completed"):
@@ -159,8 +210,20 @@ class Engine:
                 {"id": "verification", "label": "Protected verification completed", "status": "failed",
                  "detail": run["error"], "group": "execution"}],
                 "scope": "Verification did not complete; no successful outcome is claimed."}
+        run["verification_elapsed_ms"] = round((time.perf_counter() - started) * 1000 - run["agent_elapsed_ms"], 2)
+        if supervisor:
+            # Include failed reviews from the ledger before checking the remaining allowance.
+            own_calls[:] = list(proposal_calls or []) + [
+                c for c in self.store.calls() if c["run_id"] == run["id"]]
+            try:
+                run["supervision"] = supervisor.evaluate(run)
+            except Exception as error:
+                run["supervision"] = {"status": "unavailable", "error": type(error).__name__}
+            own_calls = list(proposal_calls or []) + [
+                c for c in self.store.calls() if c["run_id"] == run["id"]]
+        run["model_calls"] = clone(own_calls)
+        run["usage"] = aggregate_usage(own_calls)
         run["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
-        run["verification_elapsed_ms"] = round(run["elapsed_ms"] - run["agent_elapsed_ms"], 2)
         run["state_changes"] = state_diff(run["initial_state"], run["final_state"])
         self.store.save_run(run, checkpoints)
         return run
@@ -174,6 +237,7 @@ class Engine:
         environment, payload = restore(checkpoint)
         action = environment.validate(action)
         kind = continuation or payload["agent_config"]["kind"]
+        playground = payload["agent_config"].get("playground", False)
         if kind not in ("deterministic_demo", "live_meta"):
             raise ValueError("Unsupported continuation mode.")
         if payload["agent_config"]["kind"] == "live_meta" and kind != "live_meta":
@@ -182,7 +246,7 @@ class Engine:
             if not meta_status()["available"]:
                 raise ModelFailure("Live continuation is unavailable. " + " ".join(meta_status()["blockers"]))
             if (payload["agent_config"]["kind"] == "live_meta"
-                    and payload["agent_config"] != self._agent_config(kind)):
+                    and payload["agent_config"] != self._agent_config(kind, playground)):
                 raise ValueError("Live model configuration changed. Restore the original model, endpoint, and bounds or record a new run.")
         proposal_calls = []
         provenance = {"kind": "manual", "failed_trace_access": False}
@@ -211,7 +275,7 @@ class Engine:
             run["model_roles"]["repair_proposer"] = provenance["proposer"]
         run["events"] = [{**clone(event), "inherited": True, "checkpoint_id": None}
                          for event in parent["events"][:payload["event_boundary"]]]
-        config = self._agent_config(kind)
+        config = self._agent_config(kind, playground)
         return self._drive(run, environment, payload["conversation"], payload["agent_state"],
                            config, first_action=action, proposal_calls=proposal_calls)
 
@@ -224,7 +288,7 @@ class Engine:
         environment, payload = restore(checkpoint)
         if not meta_status()["available"]:
             raise ModelFailure("Fresh restart is unavailable. " + " ".join(meta_status()["blockers"]))
-        config = self._agent_config("live_meta")
+        config = self._agent_config("live_meta", payload["agent_config"].get("playground", False))
         if payload["agent_config"]["kind"] == "live_meta" and payload["agent_config"] != config:
             raise ValueError("Live model configuration changed. Record a new run or restore its configuration.")
         run = self._new_run(parent["scenario_id"], "live_meta", parent_id=run_id)

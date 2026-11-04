@@ -69,7 +69,7 @@ def initial_state() -> dict:
 
 def compatibility() -> dict:
     manifest, _ = frozen_fixture()
-    modules = ("coding.py", "coding_runtime.py", "coding_verify.py", "domains.py", "engine.py", "checkpoints.py", "models.py", "jsonutil.py", "repairs.py", "redaction.py")
+    modules = ("coding.py", "coding_runtime.py", "coding_verify.py", "domains.py", "engine.py", "checkpoints.py", "models.py", "jsonutil.py", "repairs.py", "redaction.py", "playground.py")
     code = {name: hashlib.sha256((ROOT / "backend" / name).read_bytes()).hexdigest() for name in modules}
     return {"simulator": "coding-wasm", "fixture_id": manifest["fixture_id"],
             "fixture_hash": digest(manifest), "requirements_hash": manifest["requirements"]["sha256"],
