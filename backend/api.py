@@ -33,6 +33,11 @@ class NewRun(Input):
     mode: Literal["deterministic_demo", "live_meta"] = "deterministic_demo"
 
 
+class NewExperiment(Input):
+    scenario_id: Literal["coding-date-parser"] = "coding-date-parser"
+    variant_instruction: str = Field(min_length=1, max_length=1200)
+
+
 class NewBranch(Input):
     checkpoint_id: str = Field(max_length=100)
     tool: str = Field(max_length=100)
@@ -130,6 +135,16 @@ def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI
     @app.post("/api/runs", status_code=201)
     def new_run(body: NewRun):
         return engine.create(body.scenario_id, body.mode)
+
+    @app.post("/api/experiments", status_code=201)
+    def new_experiment(body: NewExperiment):
+        result = engine.experiment(body.scenario_id, body.variant_instruction)
+        for arm in ("baseline", "variant"):
+            run = result[arm]
+            result[arm] = {**summary(run), "supervision": run["supervision"],
+                           "tool_calls": sum(event["kind"] == "tool" for event in run["events"]),
+                           "blocked_actions": sum(event.get("decision") == "block" for event in run["events"])}
+        return redact_credentials(result)
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str):
