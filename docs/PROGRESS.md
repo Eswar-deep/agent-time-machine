@@ -66,18 +66,23 @@ preserved separately and are not part of these six calls.
 
 ### Validation and submission materials
 
-Latest recorded checks: **105 backend tests passed**, the original **11 browser
+Latest recorded checks: **109 backend tests passed**, the original **11 browser
 journeys passed** plus **two mocked-proposal browser journeys passed**, and the
 production build passed. Mocked integration tests and browser responses are not
 counted as additional live provider evidence. The new checks cover strict public
 context exclusion, proposal validation/history, fresh continuation, no-advice
-restart, usage, redaction and dirty file/deletion restoration.
+restart, usage, redaction and dirty file/deletion restoration. A later review
+added recursive credential scrubbing in object keys with collision-safe names;
+four focused tests and the final complete 109-test backend suite passed.
+A clean source archive also completed npm ci, a production build and fresh
+database startup without API credentials or model calls.
 
 Organizer announcements supplied by the participant require a three-minute demo
 video and an open-source GitHub repository. The checklist, MIT license and video
-script prepare those materials. Final publication, video completion and portal
-receipt should be checked separately rather than inferred from this progress
-record. See [validation](VALIDATION.md) and [submission checklist](SUBMISSION_CHECKLIST.md).
+script prepare those materials. A narrated 180-second MP4 now records inspection
+of the actual saved execution, with explicit injected/recorded labels and both
+arms' measured tokens and proposal-inclusive time. Public visibility and portal
+receipt remain separate final steps. See [validation](VALIDATION.md) and [submission checklist](SUBMISSION_CHECKLIST.md).
 
 ## Earlier coding implementation before the required Meta recovery update
 

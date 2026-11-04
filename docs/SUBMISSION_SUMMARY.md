@@ -127,7 +127,7 @@ reported. The provider supplied token usage but no directly measured monetary
 charge, so cost remains unknown rather than inferred from unverified prices.
 
 No partner feedback, production reliability claim or broad model performance
-claim is asserted. Validation completed: **105 backend tests, 13 browser tests,
+claim is asserted. Validation completed: **109 backend tests, 13 browser tests,
 and a production build**. See [validation](VALIDATION.md) and the
 [submission checklist](SUBMISSION_CHECKLIST.md) for reproducibility and remaining
 publication/form steps.

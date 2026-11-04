@@ -1,0 +1,29 @@
+{
+  "file": "agent-time-machine-demo.mp4",
+  "duration_seconds": 180.0,
+  "size_bytes": 6227226,
+  "sha256": "0a4294d7817a26ee0e3ff43c261a71918d2a7f3dbdcb4a27305ff74a1a539c36",
+  "video": {
+    "codec": "H.264",
+    "width": 1920,
+    "height": 1080,
+    "frames_per_second": 30
+  },
+  "audio": {
+    "codec": "AAC",
+    "narration": "Locally synthesized Microsoft Zira voice",
+    "mean_db": -20.9,
+    "peak_db": -2.4
+  },
+  "content": "Recorded inspection of saved actual Meta requests and executed branches; injected original and negative case explicitly labeled.",
+  "inference_during_recording": false,
+  "browser_posts_blocked": true,
+  "browser_errors": [],
+  "original_run_id": "run_8eb393e4e2b6423fbe7b350d21da64a1",
+  "proposal_id": "proposal_f80f3e9a526e4e26b813867e2ada3364",
+  "branch_run_id": "run_10451d097a334683a5f9f1ab7adc45bc",
+  "restart_run_id": "run_57c16608a60d444c97fce1d16108a2f1",
+  "negative_run_id": "run_e7f9eb95970b4a19b0cbf09bd701d844",
+  "evidence": "../../evidence/meta-repair-2026-11-03/manifest.json",
+  "credentials_shown": false
+}

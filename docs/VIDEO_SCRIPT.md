@@ -1,70 +1,73 @@
-# Three-minute demo script
+# Three-minute demo video and actual narration
 
-Target length: **180 seconds**. Use the actual application, saved run evidence
-and request records. This is a recording plan, not a claim that a Meta proposal
-has already passed. Replace the evidence slots below only after the real request,
-branch execution and protected verification have completed.
+The completed [demo video](assets/agent-time-machine-demo.mp4) is **180.0 seconds**,
+1920?1080, H.264 at 30 fps with AAC narration. It records inspection of the actual
+saved Meta request and executed branches described in the
+[evidence package](../evidence/meta-repair-2026-11-03/README.md).
 
-## Evidence to select before recording
+The persistent caption says **Recorded inspection of a real Meta execution**.
+There were no new provider requests while recording: all browser POSTs were
+blocked. This is a narrated walkthrough of saved actual evidence, not footage of
+new inference. The original regression and weakened-test candidate are explicitly
+labeled injected. Narration was synthesized locally with Microsoft Zira; it does
+not imitate a team member or partner.
 
-| Slot | Fill from the actual saved records |
-|---|---|
-| Original | Run ID, scenario, injected label, visible and protected results |
-| Meta proposal | Proposal ID, selected checkpoint, evidence references, exact action |
-| Provider | Actual provider, API surface, request model ID and returned model ID |
-| Inference configuration | Reasoning effort, output-token limit, call cap, timeout |
-| Alternative | Branch ID, patch provenance, fresh continuation model, final results |
-| Measurements | Proposal and branch latency, all calls/tokens, cost or unknown |
-| Negative case | Injected misleading-test run, visible exit, integrity/behavior failures |
-| Optional comparison | Restart ID and outcome, same declared call cap, no repair advice |
+The final comparison caption includes both arms' measured tokens and total time,
+including proposal overhead. No recovery advantage is claimed: both passed 28/28.
+See [video metadata](assets/demo-metadata.json) for encoding, duration and digest.
+The [submission summary](SUBMISSION_SUMMARY.md) supplies accompanying form copy.
 
-Keep failed proposals and branches in history. Choose a complete pair for the
-walkthrough without deleting the other attempts. A saved successful original
-coding-agent run alone is not evidence of a Meta-proposed recovery branch.
+## Actual narration
 
-## Shots and narration
+## 0–12 seconds
 
-| Time | Screen and action | Narration |
-|---|---|---|
-| **0:00–0:15** | Open the workbench with the injected **A fix that shifts time** original selected. Show task and original label. | "Agent Time Machine helps developers debug coding agents. A model can fix the reported example and still introduce a regression. We preserve the execution, branch before the mistake, and test a different decision." |
-| **0:15–0:35** | **Results → Code changes**, then **Test results**. Show the timestamp fix and lost offset adjustment. | "This original mistake is deliberately injected for a repeatable demo. The patch accepts the reported UTC timestamp, but changes the instant represented by timezone offsets. The visible command passes; independent regression checks reject the resulting code." |
-| **0:35–1:00** | Click **Analyze with Meta**, show request/loading state, then **Meta repair**. Show provider/model and saved proposal ID. | "Analyze with Meta makes an actual repair-proposer request to [provider and API], using [model ID]. It receives the task, execution events, code changes, development-test output and supported checkpoint IDs. Protected acceptance definitions and expected answers stay outside its prompt." |
-| **1:00–1:25** | Scroll **Candidate mistake**, **Observed evidence**, **Selected checkpoint** and **Exact proposed action**. Show both source panes. | "The proposal cites these observations, selects this existing checkpoint before the intervention, and supplies this exact replacement. The application validates its references, path and supported action before execution. This expected improvement is a model prediction; it has not earned a passing result yet." |
-| **1:25–1:45** | Click **Fork & execute proposal**. Show branch provenance and fresh continuation. If waiting is shortened, display a time-cut caption. | "We execute the reviewed proposal in an isolated branch. Files, relevant untracked state, pending action and ordinary agent context are restored to the selected boundary. The explicit intervention carries the proposer's analysis. Further agent decisions use fresh inference, while parent and sibling runs remain intact." |
-| **1:45–2:15** | **Compare → Code changes**, **Test results**, then **Command output**. Keep final numbers legible. | "Here are the actual original and alternative patches. The runner executes candidate JavaScript inside a restricted WebAssembly runtime, and a protected evaluator checks the outputs. The original passed [original checks]; the alternative passed [alternative checks]. The command exits and regression results shown here determine the outcome." |
-| **2:15–2:35** | Show proposal metrics and branch usage. If a completed restart comparison exists, briefly show it with its budget. | "The proposal took [latency], and the executed branch took [latency]. Across the demonstrated attempt, we recorded [calls] calls and [tokens] measured tokens. Monetary cost is [measured cost or unknown]. Failed attempts remain recorded. These are observations on one curated fixture, not a general recovery success rate." |
-| **2:35–2:50** | Open the saved injected **The misleading green test** run. Show last visible **run_tests** result, changed assertion and final tampering failure. | "This second injected candidate changes a test to expect the parser's error. Its visible command exits zero, but the independent evaluation detects the changed test and remaining bug. A model explanation or green local command cannot approve a repair." |
-| **2:50–3:00** | Return to comparison; show project name, public repository link and current verified result. | "Meta generates evidence-based repair candidates. Agent Time Machine makes them executable, inspectable and testable. The open-source repository includes setup, recorded evidence, actual test results and the limits of this prototype." |
+Agent Time Machine helps developers debug AI coding agents. This is recorded inspection of a real Meta execution. No new inference occurs.
 
-## Recording and truthfulness notes
+## 12–34 seconds
 
-- The **Analyze with Meta** click is a new provider request only if a request is
-  actually sent during that recording. If inspecting an existing proposal, add
-  **Recorded result of a real Meta request** on screen and change the narration to
-  "This saved proposal was generated through an actual request." Do not animate
-  playback as a new model call.
-- Keep the exact proposal unchanged for **Fork & execute proposal**. A source
-  edit by the presenter changes its provenance to a manual intervention.
-- If a proposal fails validation, the API fails, or the branch fails checks,
-  show the failure. Replace the outcome narration accordingly. Do not use the
-  manual correct patch as evidence of a successful Meta proposal.
-- Label time cuts explicitly, for example **Waiting shortened; actual branch
-  elapsed time shown in app**. Do not present three minutes of edited footage as
-  three minutes of raw execution latency.
-- An inherited `run_tests` Exit 1 before the correction is historical evidence.
-  The later command and final protected checks evaluate the changed code.
-- The proposal and continuation may appear in different panels. Count the
-  proposal once when summarizing the branch's attached proposal usage; do not
-  add the same request twice. Include failed/retried calls and correction
-  overhead when claiming totals for the whole experiment.
-- If showing a restart without advice, disclose the cap and information access
-  for both branches. If no real comparison was executed, omit any comparative
-  performance claim.
-- Hide credentials, billing identifiers and unrelated browser content. Retain
-  model/provider names, synthetic source, errors, provenance and measured usage.
-- Before publishing, replace every bracketed evidence slot in the final
-  narration, test the public repository and video links, and verify video
-  duration. Upload and final submission remain separate actions.
+The task is to fix a JavaScript date parser without changing the instant represented by timezone offsets. This original mistake is deliberately injected. It accepts the reported UTC example but drops timezone handling. Actual protected checks reject the regression: 25 of 28 implemented checks pass.
 
-See [submission checklist](SUBMISSION_CHECKLIST.md), [demo guide](DEMO.md) and
-[validation evidence](VALIDATION.md).
+## 34–52 seconds
+
+The repair proposer uses the direct Meta Model API and Chat Completions. It inspected the task, development-test output, recorded events, and available checkpoints. Protected acceptance definitions and expected answers were excluded. This saved proposal came from one actual model request.
+
+## 52–74 seconds
+
+Meta identified a likely mistake, cited recorded evidence, selected an existing checkpoint, and returned a bounded replacement action. The review shows the exact source, expected improvement, model configuration, measured usage, and analysis provenance. A model explanation alone never marks a repair successful.
+
+## 74–92 seconds
+
+The runner restored the selected checkpoint into an isolated branch and applied the reviewed proposal. The continuing agent used fresh Meta inference, excluding the original future. The branch passed 28 of 28 implemented checks. The parent remained unchanged.
+
+## 92–110 seconds
+
+Original and alternative patches appear side by side. Checkpoints capture files, untracked files, pending actions, configuration, and conversation context. Each branch restores its own state. Candidate JavaScript runs in a restricted WebAssembly environment with timeouts.
+
+## 110–130 seconds
+
+Both candidates face the same frozen requirements. The independent evaluator checks the reported bug, timezone regressions, and test integrity. Actual command output and evaluator hashes remain inspectable. Passing this fixture supports these implemented requirements; it does not establish general coding-agent reliability.
+
+## 130–150 seconds
+
+The supporting negative case weakens a visible assertion instead of repairing the parser. Its final visible command exits zero. Yet the protected evaluator reports test tampering and rejects it, with 25 of 28 implemented checks passing. This bad edit is explicitly injected, not attributed to Meta.
+
+## 150–170 seconds
+
+A fresh restart without advice also passed 28 of 28 implemented checks. Both arms had the same twelve-call cap, including the attached proposal for the repair arm. Advice used more tokens and more total time here, with no checked outcome advantage. Monetary cost remains unknown.
+
+## 170–180 seconds
+
+Meta proposes repairs. Time Machine makes them executable and independently testable, preserving every original and alternative attempt.
+
+## Upload and access
+
+The repository contains the MP4 so it can be downloaded or linked independently
+of the local app. Once the repository is public, its
+[direct MP4 URL](https://raw.githubusercontent.com/Eswar-deep/agent-time-machine/main/docs/assets/agent-time-machine-demo.mp4)
+can be opened without a GitHub login. Use a video upload or host accepted by the
+actual submission form; the form's permitted mechanism has not been inspected.
+A local video or GitHub push does not confirm a submitted entry.
+
+Review the complete video before submitting. It includes saved real results, with
+credentials and unrelated browser content excluded; public source and evidence
+retain third-party notices and prototype limits.

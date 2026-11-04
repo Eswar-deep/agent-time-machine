@@ -105,13 +105,13 @@ the actual form, test every submitted link from a separate browser session, and
 keep model credentials server-side. Do not place API keys in repository access
 instructions or recorded exports.
 
-- [ ] Test setup instructions from the published revision and ensure the demo
+- [x] Test setup instructions from a clean source archive and ensure the demo
       does not depend on an ignored local SQLite record being in a fresh clone.
 - [x] Include the redacted evidence needed for the demonstration in the repository.
 - [x] Add an open-source license for original project code, retaining third-party
       licenses and notices.
 - [ ] Make the GitHub repository public and verify access to its final revision.
-- [ ] Record the 3-minute walkthrough of problem, Meta proposal, branch execution,
+- [x] Record the 3-minute walkthrough of problem, Meta proposal, branch execution,
       verified result and one rejected repair. Use the [video script](VIDEO_SCRIPT.md)
       and the actual observed metrics; confirm the submitted file's duration.
 - [x] Describe technologies actually used. Do not claim Baseten, Modal or

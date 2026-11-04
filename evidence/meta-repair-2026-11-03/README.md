@@ -57,6 +57,12 @@ commands, stdout/stderr, structured results, sources and provenance. The Meta
 records include request model, returned model, direct provider endpoint, role,
 generation configuration, response ID, usage and latency.
 
+The executed backend source is preserved in revision
+[`803c043`](https://github.com/Eswar-deep/agent-time-machine/commit/803c043ed893c0c74f404915b9f5e9d1b356eb8c).
+Its application hash matches the recorded compatibility hash. Evidence file
+digests use the committed UTF-8 bytes with LF line endings. Later hardening can
+invalidate old execution checkpoints; the saved observations remain inspectable.
+
 Proposer input is under the proposal call's `request.messages`. It contains public
 development evidence and aggregate verification counts, without protected case
 definitions, expected results or reference repairs. Evaluation outputs in other

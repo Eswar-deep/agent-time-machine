@@ -12,7 +12,19 @@ def redact_credentials(value):
                 item = item.replace(secret, "[REDACTED]")
             return item
         if isinstance(item, dict):
-            return {key: redact(child) for key, child in item.items()}
+            result = {}
+            for key, child in item.items():
+                safe_key = redact(key) if isinstance(key, str) else key
+                unique_key = safe_key
+                suffix = 2
+                # Distinct filenames may collapse to the same redacted name.
+                # Keep every entry, including literal placeholder/suffix keys,
+                # without using the sensitive original name to disambiguate.
+                while unique_key in result:
+                    unique_key = f"{safe_key} [{suffix}]"
+                    suffix += 1
+                result[unique_key] = redact(child)
+            return result
         if isinstance(item, list):
             return [redact(child) for child in item]
         return item

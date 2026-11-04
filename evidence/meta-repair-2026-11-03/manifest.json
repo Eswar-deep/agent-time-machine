@@ -133,20 +133,21 @@
   "interpretation": "Both live arms passed 28/28. This single curated fixture establishes no repair-quality advantage over restarting; the advice arm used more tokens and greater total time including proposal overhead. No general recovery-rate claim.",
   "files": {
     "branch.json": {
-      "sha256": "62467204eb6ed86e0d1cb7fc9ab851dc635bafa516d6c7f5d3ce23c9cfb17c3e",
-      "bytes": 571315
+      "sha256": "44f4bc8e0105dee076a595d7fc14698cd7f0d19af364dab8b3a835377e793a26",
+      "bytes": 566800
     },
     "original.json": {
-      "sha256": "bf64f7314ddab06e6835390184b4f82c557714abd9291c542ad8674aef951f8b",
-      "bytes": 312705
+      "sha256": "ee83d00a62dbd8ceff3b206bdc3ed14eae4d16d582907a47fd4040579a6f4f51",
+      "bytes": 309929
     },
     "restart.json": {
-      "sha256": "bcfffd2860a43c3c2d1669dd34bff98fab006a5291d63caea3f78e445aec0510",
-      "bytes": 512558
+      "sha256": "d2d5f5ce56fa85da6df1df7c5d2a8b88ebc76560795077581577706149c1e904",
+      "bytes": 507717
     },
     "tamper.json": {
-      "sha256": "efafa8c4b1999490e67b68336a86ec0e86ef2a1487cc0a0c61c22dc326686a05",
-      "bytes": 209960
+      "sha256": "75424b3100daeb80f54f4dc45b34759dad57fdc01094c20fe4f4cdf1db5b50e2",
+      "bytes": 207364
     }
-  }
+  },
+  "executed_source_revision": "803c043ed893c0c74f404915b9f5e9d1b356eb8c"
 }

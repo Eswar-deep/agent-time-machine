@@ -158,7 +158,7 @@ flowchart LR
 | [Submission checklist](docs/SUBMISSION_CHECKLIST.md) | Organizer requirements and evidence preparation |
 | [Submission summary](docs/SUBMISSION_SUMMARY.md) | Exact Meta role, observed results, technology and limits |
 | [Actual Meta repair evidence](evidence/meta-repair-2026-11-03/README.md) | Request/response, executed branch, baseline, negative case and measured usage |
-| [Three-minute video](docs/VIDEO_SCRIPT.md) | Recording outline and truthful evidence labels |
+| [Three-minute video](docs/VIDEO_SCRIPT.md) | Completed MP4, actual narration and recorded-evidence labels |
 | [Live evidence manifest](evidence/meta-repair-2026-11-03/manifest.json) | Recorded real-provider repair and restart measurements |
 | [Third-party notices](THIRD_PARTY.md) | Runtime, editor, and vendored retail provenance |
 
@@ -170,7 +170,7 @@ npm run build
 npm run test:ui
 ```
 
-Latest recorded checks: **105 backend tests passed**, **13 browser journeys
+Latest recorded checks: **109 backend tests passed**, **13 browser journeys
 passed** across the existing 11 and two new mocked-proposal journeys, and the
 production build passed. Browser tests make no paid model calls; provider
 responses in proposal journeys are mocked. Playwright

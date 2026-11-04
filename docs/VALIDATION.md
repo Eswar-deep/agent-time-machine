@@ -10,14 +10,15 @@ clone must execute scenarios to create its own evidence.
 
 | Check | Observed result |
 |---|---|
-| Backend pytest | 105 passed; one upstream Starlette/httpx deprecation warning |
+| Backend pytest | 109 passed; one upstream Starlette/httpx deprecation warning |
 | Browser journeys using Edge | Existing 11 passed plus two new mocked-proposal journeys passed; 13 total |
 | TypeScript/Vite build | Passed; nonblocking bundle-size warning |
 
 Coverage includes additions, edits, deletions and untracked metadata, dirty
 snapshot restoration, context/configuration restoration,
 immutable parents/siblings, failed alternatives, tampering, replay, exports,
-provider errors/redaction, tool validation, source editing, and mobile layout.
+provider errors/redaction (including object keys and redacted-name collisions),
+tool validation, source editing, and mobile layout.
 Actual WASM checks cover absent host capabilities, rejected escape attempts,
 bounded loops/allocation, and fresh contexts per case. See [sandbox](CODING_SANDBOX.md).
 
@@ -41,6 +42,12 @@ When port 8000 is free, the suite starts a backend with
 `data/browser-tests.sqlite3`. If an app is already running, the suite reuses it
 and creates records in its database. Stop the demo server first to use separate
 test data.
+
+A clean source archive of executed revision `803c043` completed `npm ci` and a
+production build. Using the installed Python lockfile environment, a fresh local
+database seeded the injected coding fixture, served the interface, restored a
+checkpoint and returned 25/28 with no API credentials or model calls. This checks
+source/dependency availability without relying on the original development data.
 
 ## Frozen fixture outcomes
 
