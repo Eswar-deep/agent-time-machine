@@ -732,18 +732,9 @@ main { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex:
 
 .playground-panel { overflow: auto; min-height: 0; }
 .playground-body { padding: 16px 20px; }
-.playground-body form { max-width: 650px; margin: 16px 0 22px; }
-.playground-body textarea {
-  display: block; width: 100%; min-height: 85px; margin: 8px 0;
-  padding: 10px; color: var(--ink); background: var(--panel-deep);
-  border: 1px solid var(--line); border-radius: 5px; resize: vertical;
-}
-.playground-body form p { margin: 8px 0; }
-.playground-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.playground-body > .button { margin: 8px 0; }
+.playground-results { margin-top: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
 .playground-results article { padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-deep); }
 .playground-results dl { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; }
-.playground-results dt, .playground-results small { color: var(--muted); }
+.playground-results dt { color: var(--muted); }
 .playground-results dd { margin: 0; }
-.playground-results ul { padding-left: 18px; overflow-wrap: anywhere; }
-.playground-results li { margin-bottom: 12px; }
-.playground-results li p { margin: 4px 0; }

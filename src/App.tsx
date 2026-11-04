@@ -9,7 +9,7 @@ import {
 import SourceEditor from './components/SourceEditor';
 import RepairReview from './components/RepairReview';
 import Playground from './components/Playground';
-import type { Action, Change, Checkpoint, CommandResult, Comparison, Experiment, FileDiff, Health, Outcome, Proposal, Run, RunEvent, RunSummary, Scenario, Usage, Verification } from './types';
+import type { Action, Change, Checkpoint, CommandResult, Comparison, DemoComparison, FileDiff, Health, Outcome, Proposal, Run, RunEvent, RunSummary, Scenario, Usage, Verification } from './types';
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch('/api' + path, body === undefined ? undefined :
@@ -213,9 +213,7 @@ export default function App() {
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [inspectorTab, setInspectorTab] = useState('intervene');
   const [view, setView] = useState('workspace');
-  const [experiment, setExperiment] = useState<Experiment | null>(null);
-  const [variantInstruction, setVariantInstruction] = useState(
-    'Inspect the parser and its visible tests before editing. Make one targeted fix, then run the tests.');
+  const [demoComparison, setDemoComparison] = useState<DemoComparison | null>(null);
 
   const [workspaceMode, setWorkspaceMode] = useState('inspect');
   const [traceExpanded, setTraceExpanded] = useState(false);
@@ -357,11 +355,15 @@ export default function App() {
     finally { setBusy(''); }
   }
 
-  async function runExperiment() {
-    await perform('Running baseline and variant', async () => {
-      setExperiment(null);
-      const result = await api<Experiment>('/experiments', { variant_instruction: variantInstruction });
-      setExperiment(result);
+  async function compareDemoWithMeta() {
+    await perform('Running the demo and live Meta agent', async () => {
+      setDemoComparison(null);
+      const scenario_id = 'coding-date-parser';
+      const demo = await api<Run>('/runs', { scenario_id, mode: 'deterministic_demo' });
+      setDemoComparison({ demo, meta: null });
+      await refresh();
+      const meta = await api<Run>('/runs', { scenario_id, mode: 'live_meta' });
+      setDemoComparison({ demo, meta });
       await refresh();
     });
   }
@@ -497,8 +499,7 @@ export default function App() {
       <main>
         {error && <div className="alert error-alert" role="alert"><XCircle size={18} /><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError(null)}><X size={16} /></button></div>}
         {busy && <div className="busy-bar" role="status"><LoaderCircle size={14} className="spin" />{busy}…</div>}
-        {view === 'playground' ? <Playground health={health} instruction={variantInstruction} onInstruction={setVariantInstruction}
-          experiment={experiment} busy={!!busy} onRun={() => void runExperiment()}
+        {view === 'playground' ? <Playground health={health} comparison={demoComparison} busy={!!busy} onRun={() => void compareDemoWithMeta()}
           onInspect={id => void perform('Opening experiment run', () => loadRun(id))} />
         : view === 'runs' ? <section className="panel history-panel"><div className="panel-header"><div><h1>Saved runs</h1><p>Every original, alternative, and failed attempt.</p></div><span className="muted">{runs.length} total</span></div>
           <div className="history-table"><div className="history-table-head"><span>Run</span><span>Execution mode</span><span>Outcome</span><span>Created</span><span /></div>

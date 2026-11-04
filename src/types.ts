@@ -58,8 +58,4 @@ export type Proposal = { id: string; run_id?: string; checkpoint_id?: string | n
   provenance?: { provider: string; api_surface: string; model: string; endpoint: string; role: string } };
 
 
-export type SupervisorCriterion = { status: 'pass' | 'fail' | 'uncertain'; reason: string; evidence: string[] };
-export type ExperimentArm = RunSummary & { tool_calls: number; blocked_actions: number;
-  supervision: { status: 'completed'; rubric: Record<string, SupervisorCriterion> } |
-    { status: 'unavailable'; error: string } };
-export type Experiment = { id: string; baseline: ExperimentArm; variant: ExperimentArm };
+export type DemoComparison = { demo: Run; meta: Run | null };
