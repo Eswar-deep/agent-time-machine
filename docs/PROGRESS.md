@@ -2,7 +2,84 @@
 
 Updated 2026-11-03.
 
-## Current implementation: coding-agent demo
+## Latest scope and verified Meta recovery — November 3, 2026
+
+The required MVP now connects a real Meta repair-proposer response to an actual
+executed coding branch and its independent evaluation. Manual checkpoint replay
+remains available as a development aid, but is no longer the completion gate.
+Existing architecture, UI, retail support and integrations were extended.
+
+### Implemented changes
+
+- A strict public-context projection sends the task, candidate files/diffs,
+  visible execution/tool/test evidence, compatible checkpoint IDs and aggregate
+  verification counts to the proposer. Protected definitions, expected answers,
+  per-case diagnostics and reference repairs remain excluded.
+- Meta returns structured status, selected checkpoint, evidence references,
+  explanation, expected improvement and one bounded action. Unknown or invalid
+  schema/checkpoint/event/path/action data fails before execution. API errors and
+  insufficient-evidence responses remain in saved proposal history.
+- **Analyze with Meta** and **Meta repair** show the actual provider/model, role,
+  configuration, evidence, checkpoint and exact action. Reviewed execution
+  requires an unchanged proposal and fresh Meta continuation; edits are manual.
+- Restart without advice restores the same boundary and asks for fresh decisions
+  without the pending action, proposal or original future. Attached proposal
+  usage counts against the repair branch's call allowance.
+- Virtual snapshots now exercise additions, edits and deletions, dirty tracked
+  state and relevant untracked files. Baseline tracking metadata retains tracked
+  deletion. Candidate code continues to run only in the bounded WASM guest.
+- Exports include parent/proposal/fork-checkpoint/model request-response evidence,
+  roles, usage and integrity. Configured credentials are redacted recursively;
+  any altered checkpoint content carries a checksum/restoration warning.
+
+### Actual bounded experiment
+
+The full recorded evidence is in
+[evidence/meta-repair-2026-11-03](../evidence/meta-repair-2026-11-03/manifest.json).
+It uses direct Meta Model API, `muse-spark-1.3`, Chat Completions, reasoning `low`,
+2,048 output tokens, 60-second request timeout and a 12-call cap per arm. The
+experiment allowed up to 25 calls including one possible extra proposal attempt;
+no automatic retries were enabled.
+
+The deliberately injected original `run_8eb393e4e2b6423fbe7b350d21da64a1` passed
+25/28. Real proposal `proposal_f80f3e9a526e4e26b813867e2ada3364` selected
+`cp_8634588107184a0daddae404fc25a79a`, cited four original events and proposed
+restoring offset subtraction while keeping Z-format support. It took 18.13
+seconds and one call with 13,280 measured tokens. The exact proposal executed in
+`run_10451d097a334683a5f9f1ab7adc45bc`, then continued through fresh Meta inference.
+It passed 28/28, protected Exit 0, with no tampering. Parent and sibling integrity,
+the exact action and restored untracked note were verified.
+
+The advice arm used three calls and 23,834 tokens, including the proposal. Its
+branch execution took 9.43 seconds; proposal plus branch took 27.57 seconds.
+Restart without advice `run_57c16608a60d444c97fce1d16108a2f1` also passed 28/28,
+using three calls, 14,450 tokens and 15.31 seconds. This demonstrates a working
+Meta-proposed correction but **no quality advantage over restart**. The advice
+arm used more tokens and total elapsed time.
+
+The experiment totals were six actual provider calls, 38,284 tokens, no retries
+and no failed live requests/proposals/branches. Two injected failed originals
+remain recorded. The misleading-green negative has visible Exit 0 but 25/28,
+protected Exit 1 and tampering detected. It is labeled injected. Monetary cost
+is unknown because rates were not configured. Earlier development failures are
+preserved separately and are not part of these six calls.
+
+### Validation and submission materials
+
+Latest recorded checks: **105 backend tests passed**, the original **11 browser
+journeys passed** plus **two mocked-proposal browser journeys passed**, and the
+production build passed. Mocked integration tests and browser responses are not
+counted as additional live provider evidence. The new checks cover strict public
+context exclusion, proposal validation/history, fresh continuation, no-advice
+restart, usage, redaction and dirty file/deletion restoration.
+
+Organizer announcements supplied by the participant require a three-minute demo
+video and an open-source GitHub repository. The checklist, MIT license and video
+script prepare those materials. Final publication, video completion and portal
+receipt should be checked separately rather than inferred from this progress
+record. See [validation](VALIDATION.md) and [submission checklist](SUBMISSION_CHECKLIST.md).
+
+## Earlier coding implementation before the required Meta recovery update
 
 Agent Time Machine remains the selected project. The primary presentation now
 uses the frozen [JavaScript date-parser fixture](../fixtures/date_parser/README.md).
@@ -167,7 +244,7 @@ part of the completed coding demo, and no public web rewind is claimed.
 
 The sections below preserve the earlier retail implementation and savepoint
 history. Their test totals, plan, and blockers describe that earlier stage;
-use the November 2 status above for the current coding-demo scope.
+use the latest November 3 section above for the current coding-demo scope.
 
 ### Saved progress
 

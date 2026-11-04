@@ -36,10 +36,35 @@ Restart the backend after editing configuration. A browser refresh is insufficie
 | `META_OUTPUT_USD_PER_MILLION` | Empty | Optional output-token price |
 | `ATM_DATABASE` | `data/agent-time-machine.sqlite3` | SQLite persistence path |
 
+The current adapter is **direct Meta Model API**, using **Chat Completions** at
+`https://api.meta.ai/v1/chat/completions`. `muse-spark-1.3` is the verified configured
+model. The adapter rejects other provider URLs rather than sending credentials
+to an unofficial endpoint. Each live record stores the actual model and role;
+`repair_proposer` and `continuing_agent` are separate roles even when they share
+the same provider/model.
+
 A full live run requires more than a one-call smoke test; the verified fixture
 used nine calls. A call allowance is not a dollar cap. Missing usage/rates produce
 unknown cost. Check billing and model access for the key's account. A catalog
 response or health's `meta.available` does not prove successful generation.
+
+For the main recovery demo, create a labeled deterministic **A fix that shifts
+time** original, then click **Analyze with Meta**. This makes a live proposal call
+even though the original is scripted. The model selects a supported checkpoint;
+review its evidence and exact action before **Fork & execute proposal**. The
+unchanged reviewed proposal requires fresh Meta continuation, so leave room for
+both proposal and continuation calls. A manual-only repair does not complete the
+required submission workflow.
+
+The branch call cap includes its attached proposal. Failed or abandoned proposals
+remain in the ledger and consume the original's proposal allowance. **Restart
+without advice** uses the same declared cap without repair advice. The per-branch
+cap is not a global experiment budget: count all attempts when reporting overhead.
+
+The recorded November 3 recovery used one proposal plus two fresh continuation
+requests within its 12-call cap. That observation is not a guaranteed future
+call count. The [evidence manifest](../evidence/meta-repair-2026-11-03/manifest.json)
+records the actual request configuration and comparison budget.
 
 Supported reasoning settings are `minimal`, `low`, `medium`, `high`, `xhigh`,
 and `max`; invalid settings are rejected before HTTP. Small output limits may
@@ -59,8 +84,23 @@ old checkpoints; record a new run when that happens.
 SQLite stores runs, checkpoints, proposals, and model-call attempts across
 restarts. Dependencies, builds, local data, credentials, and scratch logs are not
 included in a fresh clone. **Export** saves a run with its checkpoints.
-Exports include conversation, code, observations, and usage; review before sharing.
+Exports also include the parent, fork checkpoint, attached/related proposals and
+relevant model calls, with observable requests/responses and provider/model roles.
+Configured credentials are removed recursively, but review the evidence for any
+other private content before sharing. Redaction can change a checkpoint's content
+without updating its original checksum; such exports carry a restoration warning.
 
 The **State** view includes all supported candidate files and tracked/untracked
-metadata. The source checkout and protected evaluator are not writable candidate
-files. See [sandbox scope](CODING_SANDBOX.md).
+metadata. Additions and edits live in the snapshot map; deleted tracked paths
+remain in baseline tracking metadata. A Git commit is not required to capture
+dirty candidate state. The source checkout and protected evaluator are not
+writable candidate files. See [sandbox scope](CODING_SANDBOX.md).
+
+## Submission materials
+
+The supplied organizer announcements require a **3-minute video** and an
+**open-source GitHub repository**. The [MIT license](../LICENSE) covers original
+project code; keep [third-party notices](../THIRD_PARTY.md). A private remote and
+loopback app URL do not give reviewers access. Follow the [submission checklist](SUBMISSION_CHECKLIST.md)
+and [video script](VIDEO_SCRIPT.md); no final submission or public deployment is
+implied by a local run.

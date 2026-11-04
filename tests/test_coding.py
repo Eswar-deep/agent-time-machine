@@ -230,9 +230,16 @@ def test_mocked_meta_proposal_and_fresh_coding_continuation_exclude_protected_da
         assert "2026-11-04T23:45:00-05:30" not in serialized  # Protected case input.
         if body.get("response_format"):
             assert original_future in serialized  # Separate proposer has explicitly declared failed-trace access.
-            return response({"content": json.dumps({**replacement, "explanation": "Preserve the offset adjustment while accepting Z."})})
+            evidence = next(event["id"] for event in original["events"]
+                            if event["kind"] == "tool" and event["tool"] == "write_file")
+            return response({"content": json.dumps({
+                "status": "ready", "checkpoint_id": checkpoint["id"], "evidence_refs": [evidence],
+                "explanation": "Preserve the offset adjustment while accepting Z.",
+                "expected_improvement": "Accept the reported Z format without shifting offset timestamps.",
+                "action": replacement,
+            })})
         assert original_future not in serialized
-        assert "recorded_trace" not in serialized
+        assert "execution_events" not in serialized
         if len(seen) == 2:
             changed_result = json.loads(body["messages"][-1]["content"])
             assert changed_result["value"]["path"] == "timestamp_parser.js"

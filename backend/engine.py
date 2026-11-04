@@ -6,6 +6,7 @@ from . import domains
 from .checkpoints import capture, restore
 from .jsonutil import canonical, clone, digest, now, state_diff
 from .models import MetaClient, ModelFailure, aggregate_usage, bounded_integer, meta_status
+from .redaction import redact_credentials
 from .store import Store
 
 
@@ -23,12 +24,21 @@ class Engine:
                            "timeout_seconds": bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 60, 1, 60)})
         return config
 
+    def _model_role(self, kind, role="continuing_agent"):
+        status = meta_status()
+        return {"role": role, "provider": "Meta" if kind == "live_meta" else "scripted_demo",
+                "product": "Meta Model API" if kind == "live_meta" else None,
+                "api_surface": "Chat Completions" if kind == "live_meta" else None,
+                "model": status["model"] if kind == "live_meta" else None,
+                "endpoint": status["base_url"].rstrip("/") + "/chat/completions" if kind == "live_meta" else None}
+
     def _new_run(self, scenario_id, mode, parent_id=None):
         task = domains.scenario(scenario_id)
         return {"id": "run_" + uuid4().hex, "parent_id": parent_id, "fork_checkpoint_id": None,
                 "created_at": now(), "scenario_id": scenario_id, "domain": task["domain"], "title": task["title"], "mode": mode,
                 "injected_failure": False, "execution": "running", "error": None, "patch": None,
                 "events": [], "checkpoints": [], "model_calls": [], "replay": None,
+                "model_roles": {"continuing_agent": self._model_role(mode)},
                 "compatibility": domains.compatibility(task["domain"]), "elapsed_ms": 0}
 
     def _event(self, run, kind, **data):
@@ -184,7 +194,11 @@ class Engine:
             if kind != "live_meta":
                 raise ValueError("Meta proposals require a fresh live continuation.")
             proposal_calls = proposal["model_calls"]
-            provenance = {"kind": "meta_proposal", "proposal_id": proposal_id, "failed_trace_access": True}
+            provenance = {"kind": "meta_proposal", "proposal_id": proposal_id, "failed_trace_access": True,
+                          "evidence_refs": proposal.get("evidence_refs", []),
+                          "explanation": proposal.get("explanation"),
+                          "expected_improvement": proposal.get("expected_improvement"),
+                          "proposer": proposal.get("provenance", self._model_role("live_meta", "repair_proposer"))}
         run = self._new_run(parent["scenario_id"], kind, parent_id=run_id)
         run["parent_sha256"] = digest(parent)
         run["fork_checkpoint_id"] = checkpoint_id
@@ -193,11 +207,35 @@ class Engine:
         run["injected_failure"] = parent["injected_failure"]
         run["patch"] = {"before": payload["pending_action"], "after": action, "provenance": provenance,
                         "continuation": kind, "context_rule": "Only the conversation before this checkpoint is restored."}
+        if proposal_id:
+            run["model_roles"]["repair_proposer"] = provenance["proposer"]
         run["events"] = [{**clone(event), "inherited": True, "checkpoint_id": None}
                          for event in parent["events"][:payload["event_boundary"]]]
         config = self._agent_config(kind)
         return self._drive(run, environment, payload["conversation"], payload["agent_state"],
                            config, first_action=action, proposal_calls=proposal_calls)
+
+    def restart(self, run_id: str, checkpoint_id: str) -> dict:
+        """Fresh decisions from the same boundary, without proposer advice."""
+        parent = self.store.run(run_id)
+        checkpoint = self.store.checkpoint(checkpoint_id)
+        if checkpoint["run_id"] != run_id:
+            raise ValueError("The restart checkpoint belongs to another run.")
+        environment, payload = restore(checkpoint)
+        if not meta_status()["available"]:
+            raise ModelFailure("Fresh restart is unavailable. " + " ".join(meta_status()["blockers"]))
+        config = self._agent_config("live_meta")
+        if payload["agent_config"]["kind"] == "live_meta" and payload["agent_config"] != config:
+            raise ValueError("Live model configuration changed. Record a new run or restore its configuration.")
+        run = self._new_run(parent["scenario_id"], "live_meta", parent_id=run_id)
+        run.update({"parent_sha256": digest(parent), "fork_checkpoint_id": checkpoint_id,
+                    "initial_state": clone(parent["initial_state"]), "fork_state": environment.snapshot(),
+                    "injected_failure": False, "source_run_injected_failure": parent["injected_failure"],
+                    "restart": {"kind": "checkpoint_restart_without_advice", "checkpoint_id": checkpoint_id,
+                                "failed_trace_access": False, "pending_action_discarded": True}})
+        run["events"] = [{**clone(event), "inherited": True, "checkpoint_id": None}
+                         for event in parent["events"][:payload["event_boundary"]]]
+        return self._drive(run, environment, payload["conversation"], payload["agent_state"], config)
 
     def replay(self, run_id: str) -> dict:
         parent = self.store.run(run_id)
@@ -267,7 +305,50 @@ class Engine:
                            "scope": "Frozen coding checks on actual isolated executions. This does not establish general coding-agent recovery."})
         return result
 
-    def propose(self, run_id: str, checkpoint_id: str) -> dict:
+    def propose(self, run_id: str, checkpoint_id: str | None = None) -> dict:
+        parent = self.store.run(run_id)
+        if parent.get("domain") != "coding":
+            if not checkpoint_id:
+                raise ValueError("Choose a checkpoint for the retail proposer.")
+            return self._legacy_propose(run_id, checkpoint_id)
+        from pydantic import ValidationError
+        from .repairs import PROPOSER_POLICY, public_context, validate_candidate
+
+        started = time.perf_counter()
+        proposal = {"id": "proposal_" + uuid4().hex, "run_id": run_id, "checkpoint_id": None,
+                    "created_at": now(), "status": "failed", "action": None, "explanation": None,
+                    "evidence_refs": [], "expected_improvement": None, "failed_trace_access": True,
+                    "model_calls": [], "error": None, "raw_response": None,
+                    "provenance": self._model_role("live_meta", "repair_proposer"),
+                    "generation_config": self._agent_config("live_meta")}
+        try:
+            if not meta_status()["available"]:
+                raise ModelFailure("Meta proposals are unavailable. " + " ".join(meta_status()["blockers"]))
+            checkpoints = [self.store.checkpoint(item["id"]) for item in parent["checkpoints"]]
+            context = public_context(parent, checkpoints, checkpoint_id)
+            proposal["context_sha256"] = digest(context)
+            proposal["available_checkpoint_ids"] = [item["id"] for item in context["available_checkpoints"]]
+            messages = [{"role": "developer", "content": PROPOSER_POLICY},
+                        {"role": "user", "content": canonical(context)}]
+            spent = sum(call["run_id"] == run_id and call["purpose"] == "proposal" for call in self.store.calls())
+            message, call = MetaClient(self.store).complete(messages, [], run_id, "proposal", spent,
+                                                          proposal_id=proposal["id"], json_output=True)
+            proposal["model_calls"].append(call)
+            proposal["raw_response"] = message.get("content")
+            raw = json.loads(message["content"])
+            proposal.update(validate_candidate(raw, parent, checkpoints))
+        except ValidationError as error:
+            proposal["error"] = "Invalid repair proposal schema: " + str(error.errors(include_input=False, include_url=False))[:2500]
+        except Exception as error:
+            proposal["error"] = str(error)[:3000]
+        proposal["model_calls"] = [call for call in self.store.calls() if call.get("proposal_id") == proposal["id"]]
+        proposal["usage"] = aggregate_usage(proposal["model_calls"])
+        proposal["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        proposal = redact_credentials(proposal)
+        self.store.save_proposal(proposal)
+        return proposal
+
+    def _legacy_propose(self, run_id: str, checkpoint_id: str) -> dict:
         parent = self.store.run(run_id)
         checkpoint = self.store.checkpoint(checkpoint_id)
         if checkpoint["run_id"] != run_id:

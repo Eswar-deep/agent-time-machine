@@ -7,7 +7,8 @@ import {
   Terminal, Upload, Workflow, X, XCircle, Moon, Sun,
 } from 'lucide-react';
 import SourceEditor from './components/SourceEditor';
-import type { Action, Change, Checkpoint, CommandResult, Comparison, FileDiff, Health, Outcome, Proposal, Run, RunEvent, RunSummary, Scenario, Verification } from './types';
+import RepairReview from './components/RepairReview';
+import type { Action, Change, Checkpoint, CommandResult, Comparison, FileDiff, Health, Outcome, Proposal, Run, RunEvent, RunSummary, Scenario, Usage, Verification } from './types';
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch('/api' + path, body === undefined ? undefined :
@@ -30,6 +31,8 @@ const duration = (ms: number) => ms < 1000 ? ms.toFixed(1) + ' ms' : (ms / 1000)
 const modeName = (mode: string) => ({ deterministic_demo: 'Deterministic demo', live_meta: 'Live Meta', unchanged_replay: 'Unchanged tool replay' }[mode] || mode);
 const displayValue = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value);
 const timeOf = (date: string) => new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const measuredUsage = (usage: Usage) => (usage.total_tokens == null ? 'tokens unknown' : usage.total_tokens.toLocaleString() + ' tokens') +
+  ' · cost ' + (usage.cost_usd == null ? 'unknown' : '$' + usage.cost_usd.toFixed(5));
 const asCommand = (value: unknown): CommandResult | null => value && typeof value === 'object' &&
   'command' in value && Array.isArray(value.command) && 'exit_code' in value ? value as CommandResult : null;
 
@@ -202,6 +205,9 @@ export default function App() {
   const [argumentsText, setArgumentsText] = useState('{}');
   const [continuation, setContinuation] = useState('deterministic_demo');
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [proposalHistory, setProposalHistory] = useState<Proposal[]>([]);
+  const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [proposalHistoryError, setProposalHistoryError] = useState<string | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [inspectorTab, setInspectorTab] = useState('intervene');
   const [view, setView] = useState('workspace');
@@ -231,6 +237,7 @@ export default function App() {
     const next = await api<Run>('/runs/' + id);
     if (request !== runRequest.current) return;
     setRun(next);
+    setProposal(null); setSelectedProposal(null); setProposalHistory([]); setProposalHistoryError(null);
     setSelectedScenario(next.scenario_id);
     const editCheckpoint = next.domain === 'coding' ? [...next.checkpoints].reverse().find(item => item.tool === 'write_file') : null;
     setCheckpointId(editCheckpoint?.id || next.checkpoints.at(-1)?.id || null);
@@ -310,6 +317,14 @@ export default function App() {
   }, [run?.id]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (run?.domain === 'coding') api<Proposal[]>('/runs/' + run.id + '/proposals').then(next => {
+      if (!cancelled) { setProposalHistory(current => [...current, ...next.filter(item => !current.some(existing => existing.id === item.id))]); setProposalHistoryError(null); }
+    }).catch(e => !cancelled && setProposalHistoryError(e.message));
+    return () => { cancelled = true; };
+  }, [run?.id]);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 5500);
     return () => clearTimeout(timer);
@@ -344,24 +359,44 @@ export default function App() {
   }
 
   async function fork() {
-    if (!run || !checkpoint) return;
+    if (!run || !checkpoint || checkpoint.id !== checkpointId) return;
     await perform('Executing branch', async () => {
       const args = JSON.parse(argumentsText);
+      const reviewed = proposal?.status === 'ready' && (!proposal.checkpoint_id || proposal.checkpoint_id === checkpoint.id) &&
+        stable(proposal.action) === stable({ tool, arguments: args });
       const next = await api<Run>('/runs/' + run.id + '/branches', { checkpoint_id: checkpoint.id,
-        tool, arguments: args, continuation, proposal_id: proposal?.id || null });
+        tool, arguments: args, continuation: reviewed ? 'live_meta' : continuation, proposal_id: reviewed ? proposal.id : null });
       await refresh(); await loadRun(next.id);
       setToast(next.execution === 'completed' ? 'Branch saved. Compare its patch and verified results.' : 'Branch saved with an execution error.');
     });
   }
 
+  async function reviewProposal(next: Proposal) {
+    if (!run) return;
+    setSelectedProposal(next);
+    if (next.status !== 'ready' || !next.action) { setProposal(null); return; }
+    const target = next.checkpoint_id || checkpointId;
+    if (!target || !run.checkpoints.some(boundary => boundary.id === target)) throw new Error('The proposal does not select an available checkpoint in this run.');
+    // Cache first: the checkpoint-loading effect restores this exact reviewed action.
+    // It must not replace the proposal with the checkpoint's original pending edit.
+    drafts.current.set(target, { tool: next.action.tool, argumentsText: pretty(next.action.arguments), continuation: 'live_meta', proposal: next });
+    setCheckpointId(target);
+    setProposal(next); setTool(next.action.tool); setArgumentsText(pretty(next.action.arguments));
+    setContinuation('live_meta'); setInspectorTab('intervene'); setWorkspaceMode('inspect');
+  }
+
   async function askMeta() {
-    if (!run || !checkpoint) return;
-    await perform('Requesting Meta patch', async () => {
-      const next = await api<Proposal>('/runs/' + run.id + '/proposals', { checkpoint_id: checkpoint.id });
+    if (!run || run.domain !== 'coding' && !checkpoint) return;
+    const sourceRunId = run.id;
+    await perform('Meta is analyzing the failed execution', async () => {
+      const next = await api<Proposal>('/runs/' + sourceRunId + '/proposals', run.domain === 'coding' ? {} : { checkpoint_id: checkpoint!.id });
+      setProposalHistory(history => [next, ...history.filter(item => item.id !== next.id)]);
+      setProposalHistoryError(null);
+      await reviewProposal(next);
+      if (run.domain === 'coding') setWorkspaceMode('repair');
       await refresh();
-      if (next.status !== 'ready' || !next.action) throw new Error(next.error || 'Meta did not return a valid proposal.');
-      setProposal(next); setTool(next.action.tool); setArgumentsText(pretty(next.action.arguments));
-      setContinuation('live_meta'); setToast('Meta proposed a patch. Review it before executing.');
+      setToast(next.status === 'ready' ? 'Meta selected a checkpoint and proposed a correction. Review it before executing.' :
+        next.status === 'insufficient_evidence' ? 'Meta reported insufficient evidence. The attempt is saved.' : 'Meta proposal failed. Inspect the saved error and usage.');
     });
   }
 
@@ -370,6 +405,15 @@ export default function App() {
     await perform('Replaying tools', async () => {
       const next = await api<Run>('/runs/' + run.id + '/replay', {});
       await refresh(); await loadRun(next.id); setToast('Tool replay saved. Agent messages are recorded playback.');
+    });
+  }
+
+  async function restartWithoutAdvice() {
+    if (!run || !selectedProposal?.checkpoint_id) return;
+    await perform('Restarting from checkpoint without advice', async () => {
+      const next = await api<Run>('/runs/' + run.id + '/restarts', { checkpoint_id: selectedProposal.checkpoint_id });
+      await refresh(); await loadRun(next.id);
+      setToast('Fresh restart saved. Compare its verified outcome and usage; no repair proposal was supplied.');
     });
   }
 
@@ -391,6 +435,7 @@ export default function App() {
     else parsedAction = { tool, arguments: args };
   } catch { editorError = 'Enter valid JSON to execute this branch.'; }
   const changed = checkpoint && parsedAction && stable(parsedAction) !== stable(checkpoint.payload.pending_action);
+  const proposalDraftMatches = !!selectedProposal && proposal?.id === selectedProposal.id && stable(parsedAction) === stable(selectedProposal.action);
   const task = scenarios.find(s => s.id === (run?.scenario_id || selectedScenario));
   const selectedTask = scenarios.find(s => s.id === selectedScenario);
   const selectedCoding = (selectedTask?.domain || (selectedScenario.startsWith('coding-') ? 'coding' : 'retail')) === 'coding';
@@ -454,12 +499,14 @@ export default function App() {
           </section>
           {loading ? <div className="loading-state"><LoaderCircle size={25} className="spin" /><h2>Opening the workspace</h2><p>Loading saved events and verified checkpoints.</p></div> : run ? <>
             <div className="run-context"><span className="run-context-left"><span className="mono">{shortId(run.id)}</span><ChevronRight size={12} />
-              <strong className="current-run-title">{task?.title}</strong><span className="run-kind">{run.replay ? 'Tool replay' : run.parent_id ? 'Intervention branch' : 'Original run'}</span><span className="saved-tag"><Check size={12} /> Saved</span></span>
+              <strong className="current-run-title">{task?.title}</strong><span className="run-kind">{run.replay ? 'Tool replay' : run.restart ? 'Checkpoint restart' : run.parent_id ? 'Intervention branch' : 'Original run'}</span><span className="saved-tag"><Check size={12} /> Saved</span></span>
               <div className="run-context-actions">{run.parent_id && <button className="text-button" disabled={!!busy} onClick={() => void perform('Opening original', () => loadRun(run.parent_id!))}><ArrowLeft size={13} /> Parent run</button>}
                 <button className="text-button" onClick={() => void replay()} disabled={!!busy}><RotateCcw size={13} /> Replay unchanged</button><a className="text-button" href={'/api/runs/' + run.id + '/export'} download><Download size={13} /> Export</a></div></div>
             <div className="metrics"><div className="outcome-metric"><OutcomeBadge run={run} /><span>{run.replay ? 'Recorded state + observations' : run.outcome.passed + '/' + run.outcome.total + ' checks passed'}</span></div>
               <span><Terminal size={13} />{toolEvents.length} tool calls</span><span><Fingerprint size={13} />{run.checkpoints.length} checkpoints</span><span><Clock3 size={13} />{duration(run.elapsed_ms)}</span><span className="model-count">{run.usage.calls} model calls</span></div>
-            <div className="mode-notice"><FlaskConical size={13} /><strong>{run.replay ? 'Recorded playback' : run.patch ? run.patch.provenance.kind === 'meta_proposal' ? 'Meta proposal' : 'Manual intervention' : run.injected_failure ? 'Injected failure' : modeName(run.mode)}</strong><span>·</span><span>{run.replay ? 'Tools re-executed; agent messages are saved.' : run.mode === 'live_meta' ? 'Fresh Meta continuation · actual model calls recorded' : coding ? 'Scripted actions · real commands · no live model' : 'Deterministic policy · real simulator execution · no live model'}</span></div>
+            <div className="mode-notice"><FlaskConical size={13} /><strong>{run.replay ? 'Recorded playback' : run.restart ? 'Restart without advice' : run.patch ? run.patch.provenance.kind === 'meta_proposal' ? 'Meta proposal' : 'Manual intervention' : run.injected_failure ? 'Injected failure' : modeName(run.mode)}</strong><span>·</span><span>{run.replay ? 'Tools re-executed; agent messages are saved.' : run.restart ? 'Fresh Meta decisions from the checkpoint · no repair advice · original future excluded' : run.mode === 'live_meta' ? 'Fresh Meta continuation · actual model calls recorded' : coding ? 'Scripted actions · real commands · no live model' : 'Deterministic policy · real simulator execution · no live model'}</span></div>
+            {!!run.model_calls.length && <details className="run-model-roles"><summary><Sparkles size={13} />Recorded model roles and usage<ChevronDown size={12} /></summary><div>{run.model_calls.map((call, index) => <p key={call.id || index}><strong>{call.role || (coding ? 'coding_agent' : 'retail_agent')}</strong><span>{call.provider || 'Meta'} · {call.model} · {call.status}</span><span>{duration(call.latency_ms)} · {call.usage?.total_tokens == null ? 'tokens unknown' : call.usage.total_tokens + ' tokens'} · cost {call.cost_usd == null ? 'unknown' : '$' + call.cost_usd.toFixed(5)}</span></p>)}</div></details>}
+            {coding && !run.replay && <div className="meta-repair-banner"><div><strong><Sparkles size={15} />Meta-assisted recovery</strong><p>Analyze the recorded execution, select a checkpoint, and review a proposed correction before testing it.</p></div><div className="meta-repair-banner-actions"><button className="text-button" disabled={!!busy} onClick={() => setWorkspaceMode('repair')}>Saved proposals ({proposalHistory.length})</button><button className="button primary" onClick={() => void askMeta()} disabled={!!busy || !health?.meta.available || !run.checkpoints.length}><Sparkles size={14} />Analyze with Meta<span className="small-tag">LIVE</span></button></div></div>}
             {run.error && <div className="alert error-alert run-error"><XCircle size={18} /><div><strong>Execution could not complete</strong><p>{run.error}</p></div></div>}
             <div className="workspace-grid">
               <section className="panel timeline-panel" data-expanded={traceExpanded}><div className="panel-header"><h2><Workflow size={16} />Execution</h2><span className="panel-count">{toolEvents.length} actions</span><button className="mobile-trace-toggle" aria-label="Execution actions" aria-expanded={traceExpanded} aria-controls="timeline-actions" onClick={() => setTraceExpanded(!traceExpanded)}><Workflow size={16} /><strong>{selectedEvent?.tool || 'Execution'}</strong><span>{toolEvents.length} actions</span><ChevronDown size={14} /></button></div>
@@ -469,10 +516,13 @@ export default function App() {
                 <div className="timeline-footer"><ShieldCheck size={13} /><span>{coding ? 'Isolated coding fixture' : 'Pinned retail simulator'}</span></div>
               </section>
               <div className="workbench-main">
-                <div className="workspace-tabs" role="tablist" onKeyDown={navigateTabs} aria-label="Workspace views"><button role="tab" id="workspace-inspect" aria-controls="workspace-panel" tabIndex={workspaceMode === 'inspect' ? 0 : -1} aria-selected={workspaceMode === 'inspect'} onClick={() => setWorkspaceMode('inspect')}><FileCode2 size={15} />Inspect</button><button role="tab" id="workspace-results" aria-controls="workspace-panel" tabIndex={workspaceMode === 'results' ? 0 : -1} aria-selected={workspaceMode === 'results'} onClick={() => setWorkspaceMode('results')}>{run.parent_id && !run.replay ? <GitBranch size={15} /> : <ShieldCheck size={15} />}{run.parent_id && !run.replay ? 'Compare' : 'Results'}<span className={'tab-counter ' + (run.outcome.status === 'passed_checks' ? 'passed' : '')}>{run.replay ? 'Replay' : run.outcome.passed + '/' + run.outcome.total}</span></button><span className="workbench-caption">{coding ? 'date-parser / JavaScript' : 'retail / tau2'}</span></div>
-                {workspaceMode === 'inspect' ? <>
+                <div className="workspace-tabs" role="tablist" onKeyDown={navigateTabs} aria-label="Workspace views"><button role="tab" id="workspace-inspect" aria-controls="workspace-panel" tabIndex={workspaceMode === 'inspect' ? 0 : -1} aria-selected={workspaceMode === 'inspect'} onClick={() => setWorkspaceMode('inspect')}><FileCode2 size={15} />Inspect</button><button role="tab" id="workspace-results" aria-controls="workspace-panel" tabIndex={workspaceMode === 'results' ? 0 : -1} aria-selected={workspaceMode === 'results'} onClick={() => setWorkspaceMode('results')}>{run.parent_id && !run.replay ? <GitBranch size={15} /> : <ShieldCheck size={15} />}{run.parent_id && !run.replay ? 'Compare' : 'Results'}<span className={'tab-counter ' + (run.outcome.status === 'passed_checks' ? 'passed' : '')}>{run.replay ? 'Replay' : run.outcome.passed + '/' + run.outcome.total}</span></button>{coding && !run.replay && <button role="tab" id="workspace-repair" aria-controls="workspace-panel" tabIndex={workspaceMode === 'repair' ? 0 : -1} aria-selected={workspaceMode === 'repair'} onClick={() => setWorkspaceMode('repair')}><Sparkles size={15} />Meta repair{proposalHistory.length > 0 && <span className="tab-counter neutral">{proposalHistory.length}</span>}</button>}<span className="workbench-caption">{coding ? 'date-parser / JavaScript' : 'retail / tau2'}</span></div>
+                {workspaceMode === 'repair' && coding ? <RepairReview run={run} proposal={selectedProposal} checkpoint={checkpoint} history={proposalHistory} busy={!!busy} historyError={proposalHistoryError} draftMatches={proposalDraftMatches} liveBudget={health?.meta.max_calls || 0}
+                  onSelect={next => void perform('Opening Meta proposal', async () => { await reviewProposal(next); setWorkspaceMode('repair'); })}
+                  onEdit={next => void perform('Restoring proposal draft', () => reviewProposal(next))} onExecute={() => void fork()} onRestart={() => void restartWithoutAdvice()}
+                  onEvidence={id => { const event = run.events.find(item => item.id === id); if (event?.checkpoint_id) { setCheckpointId(event.checkpoint_id); setInspectorTab('result'); setWorkspaceMode('inspect'); } }} /> : workspaceMode === 'inspect' ? <>
               <section className="panel inspector-panel" id="workspace-panel" role="tabpanel" aria-labelledby="workspace-inspect"><div className="panel-header"><h2><Fingerprint size={17} />{checkpoint ? <>Checkpoint {String(ownBoundary?.step || 1).padStart(2, '0')}<span className="badge green verified" title="Snapshot integrity verified before tool execution"><ShieldCheck size={11} />Verified</span></> : 'Inspector'}</h2>
-                <div className="inspector-header-actions"><button className="button primary fork-button" onClick={() => void fork()} disabled={!checkpoint || !!busy || !!editorError}><GitBranch size={14} /> Fork & execute</button>
+                <div className="inspector-header-actions"><button className="button primary fork-button" onClick={() => void fork()} disabled={!checkpoint || checkpoint.id !== checkpointId || !!busy || !!editorError}><GitBranch size={14} /> Fork & execute</button>
                 <button className="icon-button hash-copy" aria-label="Copy snapshot hash" title={checkpoint ? 'Snapshot SHA-256: ' + checkpoint.sha256 : 'Snapshot unavailable'} disabled={!checkpoint} onClick={() => checkpoint && void navigator.clipboard.writeText(checkpoint.sha256).then(() => setToast('Snapshot hash copied.')).catch(() => setError('Clipboard unavailable; export the checkpoint to inspect its hash.'))}><Copy size={14} /></button>
                 <button className="icon-button" aria-label="Export selected checkpoint" disabled={!checkpoint} onClick={() => checkpoint && download(checkpoint.id + '.json', checkpoint)}><Download size={16} /></button></div></div>
                 {checkpointError ? <div className="inspector-empty"><XCircle size={26} className="text-red" /><h3>Checkpoint unavailable</h3><p role="alert">{checkpointError}</p><button className="button primary" onClick={() => void newRun()} disabled={!!busy}>Record a fresh run</button></div> :
@@ -520,8 +570,9 @@ export default function App() {
                     {comparison?.original_unchanged && <span className="preserved"><ShieldCheck size={13} />Parent verified unchanged</span>}</div>
                   {run.replay ? <div className="replay-result"><RotateCcw size={24} /><div><h3>{run.replay.status === 'matched' ? 'The recorded tool sequence reproduced its observations and state.' : 'The recorded tool sequence did not reproduce the original.'}</h3>
                     <p>Observation match: {String(run.replay.observations_match)} · Final state match: {String(run.replay.state_match)} · Recorded tool errors: {run.replay.tool_errors}</p><p>Task success is not evaluated by this replay. Displayed agent messages are saved playback.</p><p>This is a tool replay. Open its parent run to fork a decision.</p></div></div> : <>
-                    {comparison && <div className="comparison-summary"><div className="comparison-card"><span className="eyebrow">ORIGINAL · {shortId(comparison.parent_id)}</span><OutcomeBadge run={{ outcome: comparison.parent_outcome, replay: null, execution: 'completed' }} /><span>{comparison.parent_outcome.passed}/{comparison.parent_outcome.total} checks · {duration(comparison.parent_elapsed_ms)} · {comparison.parent_usage.calls} model calls</span></div>
-                      <span className="comparison-arrow"><ArrowRight size={20} /></span><div className="comparison-card branch-card"><span className="eyebrow">ALTERNATIVE · {shortId(run.id)}</span><OutcomeBadge run={run} /><span>{run.outcome.passed}/{run.outcome.total} checks · {duration(comparison.branch_elapsed_ms)} · {comparison.branch_usage.calls} model calls</span></div></div>}
+                    {comparison && <div className="comparison-summary"><div className="comparison-card"><span className="eyebrow">ORIGINAL · {shortId(comparison.parent_id)}</span><OutcomeBadge run={{ outcome: comparison.parent_outcome, replay: null, execution: 'completed' }} /><span>{comparison.parent_outcome.passed}/{comparison.parent_outcome.total} checks · {duration(comparison.parent_elapsed_ms)} · {comparison.parent_usage.calls} model calls</span><small>{measuredUsage(comparison.parent_usage)}</small></div>
+                      <span className="comparison-arrow"><ArrowRight size={20} /></span><div className="comparison-card branch-card"><span className="eyebrow">ALTERNATIVE · {shortId(run.id)}</span><OutcomeBadge run={run} /><span>{run.outcome.passed}/{run.outcome.total} checks · {duration(comparison.branch_elapsed_ms)} · {comparison.branch_usage.calls} model calls</span><small>{measuredUsage(comparison.branch_usage)}</small></div></div>}
+                    {run.restart && <div className="patch-summary"><RotateCcw size={14} /><span>Checkpoint restart without advice · fresh Meta decisions · no proposed patch supplied</span></div>}
                     {run.patch && <div className="patch-summary"><GitBranch size={14} /><span>{run.patch.provenance.kind === 'meta_proposal' ? 'Reviewed Meta proposal' : 'Manual intervention'} · {modeName(run.patch.continuation)}</span><code>{run.patch.after.tool}</code></div>}
                     {coding && <div className="evidence-tabs" role="tablist" onKeyDown={navigateTabs} aria-label="Evaluation evidence">{[['patch', 'Code changes', FileCode2], ['checks', 'Test results', ShieldCheck], ['output', 'Command output', Terminal]].map(([id, label, Icon]) => <button key={String(id)} role="tab" tabIndex={evidenceTab === id ? 0 : -1} aria-selected={evidenceTab === id} onClick={() => setEvidenceTab(String(id))}>{typeof Icon !== 'string' && <Icon size={14} />}{String(label)}</button>)}</div>}
                     <div className="evidence-content">

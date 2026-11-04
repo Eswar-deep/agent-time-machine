@@ -89,7 +89,13 @@ class Store:
     def save_proposal(self, proposal: dict):
         with self.connect() as connection:
             connection.execute("INSERT INTO proposals VALUES (?,?,?,?)",
-                               (proposal["id"], proposal["run_id"], proposal["checkpoint_id"], canonical(proposal)))
+                               (proposal["id"], proposal["run_id"], proposal.get("checkpoint_id") or "", canonical(proposal)))
+
+    def proposals(self, run_id: str) -> list[dict]:
+        self.run(run_id)
+        with self.connect() as connection:
+            rows = connection.execute("SELECT payload FROM proposals WHERE run_id=? ORDER BY rowid DESC", (run_id,)).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def proposal(self, proposal_id: str) -> dict:
         with self.connect() as connection:

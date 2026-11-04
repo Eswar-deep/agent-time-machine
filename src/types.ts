@@ -24,10 +24,16 @@ export type RunEvent = { id: string; seq: number; kind: string; timestamp: strin
   latency_ms?: number; model?: string; usage?: { total_tokens: number } | null };
 export type Boundary = { id: string; sha256: string; event_boundary: number; tool: string; step: number };
 export type Change = { path: string; before: unknown; after: unknown; before_exists: boolean; after_exists: boolean };
+export type ModelCall = { id: string; model: string; role?: string; provider?: string; api_surface?: string;
+  product?: string; endpoint?: string; response_model?: string; provider_response_id?: string;
+  generation_config?: { model: string; reasoning_effort: string; max_completion_tokens: number; timeout_seconds: number; max_calls: number };
+  status: string; error: string | null; latency_ms: number; cost_usd: number | null;
+  usage: { total_tokens: number; prompt_tokens: number; completion_tokens: number } | null };
 export type Run = RunSummary & { events: RunEvent[]; checkpoints: Boundary[]; error: string | null;
+  restart?: { kind: string; checkpoint_id: string; failed_trace_access: boolean; pending_action_discarded: boolean };
   patch: null | { before: Action; after: Action; provenance: { kind: string; failed_trace_access: boolean };
     context_rule: string; continuation: string };
-  state_changes: Change[]; compatibility: { commit?: string; simulator?: string }; model_calls: unknown[];
+  state_changes: Change[]; compatibility: { commit?: string; simulator?: string }; model_calls: ModelCall[];
   file_diffs?: FileDiff[]; verification?: Verification };
 export type Checkpoint = { id: string; run_id: string; sha256: string; payload: {
   domain?: Domain; format_version: number; pending_action: Action; event_boundary: number; agent_state: { cursor: number };
@@ -45,6 +51,9 @@ export type Comparison = { parent_id: string; branch_id: string; original_unchan
   parent_usage: Usage; branch_usage: Usage; parent_elapsed_ms: number; branch_elapsed_ms: number; scope: string;
   file_diffs?: FileDiff[]; parent_file_diffs?: FileDiff[]; branch_file_diffs?: FileDiff[];
   verification?: Verification; parent_verification?: Verification; branch_verification?: Verification };
-export type Proposal = { id: string; status: string; action: Action | null; explanation: string | null;
-  failed_trace_access: boolean; error: string | null };
+export type Proposal = { id: string; run_id?: string; checkpoint_id?: string | null;
+  status: 'ready' | 'failed' | 'insufficient_evidence'; action: Action | null; explanation: string | null;
+  evidence_refs?: string[]; expected_improvement?: string | null; failed_trace_access: boolean;
+  model_calls?: ModelCall[]; usage?: Usage; elapsed_ms?: number; error: string | null;
+  provenance?: { provider: string; api_surface: string; model: string; endpoint: string; role: string } };
 

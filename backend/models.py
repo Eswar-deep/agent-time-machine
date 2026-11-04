@@ -12,6 +12,7 @@ from uuid import uuid4
 import httpx
 
 from .jsonutil import clone, digest, now
+from .redaction import redact_credentials
 
 
 class ModelFailure(RuntimeError):
@@ -45,6 +46,7 @@ def meta_status() -> dict:
     if reasoning_effort not in {"minimal", "low", "medium", "high", "xhigh", "max"}:
         blockers.append("Set META_REASONING_EFFORT to minimal, low, medium, high, xhigh, or max.")
     return {"available": not blockers, "blockers": blockers, "model": model or None,
+            "provider": "Meta", "product": "Meta Model API", "api_surface": "Chat Completions",
             "base_url": os.getenv("META_BASE_URL", "https://api.meta.ai/v1"),
             "max_calls": allowance, "reasoning_effort": reasoning_effort,
             "max_output_tokens": bounded_integer("ATM_LIVE_MAX_OUTPUT_TOKENS", 2048, 64, 2048),
@@ -126,6 +128,14 @@ class MetaClient:
             raise ModelFailure("Input exceeds the local 80,000-character request allowance; use a shorter run.")
         record = {"id": "call_" + uuid4().hex, "run_id": run_id, "proposal_id": proposal_id,
                   "purpose": purpose, "model": self.status["model"], "created_at": now(),
+                  "provider": "Meta", "product": "Meta Model API", "api_surface": "Chat Completions",
+                  "endpoint": base_url.rstrip("/") + "/chat/completions",
+                  "role": "repair_proposer" if purpose == "proposal" else "continuing_agent",
+                  "generation_config": {"model": self.status["model"],
+                      "reasoning_effort": self.status["reasoning_effort"],
+                      "max_completion_tokens": self.status["max_output_tokens"],
+                      "timeout_seconds": bounded_integer("ATM_LIVE_TIMEOUT_SECONDS", 60, 1, 60),
+                      "max_calls": self.status["max_calls"]},
                   "request_hash": request_identity(base_url, payload), "request": payload,
                   "usage": None, "cost_usd": None, "latency_ms": 0, "retries": 0,
                   "status": "failed", "error": None, "response": None}
@@ -141,6 +151,8 @@ class MetaClient:
                 message, record["provider_error"] = provider_failure(response, key)
                 raise ModelFailure(message)
             body = response.json()
+            record["provider_response_id"] = body.get("id")
+            record["response_model"] = body.get("model")
             usage = body.get("usage")
             if isinstance(usage, dict) and all(type(usage.get(k)) is int and usage[k] >= 0
                                                for k in ("prompt_tokens", "completion_tokens")):
@@ -165,12 +177,17 @@ class MetaClient:
                 raise ModelFailure("Unsupported Meta content format.")
             record["response"] = clone(message)
             record["status"] = "completed"
-            return message, record
+            return redact_credentials(message), record
         except Exception as error:
             record["error"] = str(error) if isinstance(error, ModelFailure) else "Meta request failed: " + type(error).__name__
             raise ModelFailure(record["error"]) from error
         finally:
             record["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
+            safe_record = redact_credentials(record)
+            if safe_record != record:
+                record.clear()
+                record.update(safe_record)
+                record["credential_redaction_applied"] = True
             self.store.log_model_call(record)
 
 

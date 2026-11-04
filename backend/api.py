@@ -20,6 +20,7 @@ from .coding_runtime import SandboxUnavailable, runtime_signature  # noqa: E402
 from .engine import Engine  # noqa: E402
 from .environment import COMMIT  # noqa: E402
 from .models import ModelFailure, aggregate_usage, meta_status  # noqa: E402
+from .redaction import redact_credentials  # noqa: E402
 from .store import NotFound, Store  # noqa: E402
 
 
@@ -41,6 +42,10 @@ class NewBranch(Input):
 
 
 class NewProposal(Input):
+    checkpoint_id: str | None = Field(default=None, max_length=100)
+
+
+class NewRestart(Input):
     checkpoint_id: str = Field(max_length=100)
 
 
@@ -133,8 +138,21 @@ def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI
     @app.get("/api/runs/{run_id}/export")
     def export_run(run_id: str):
         run = store.run(run_id)
-        return JSONResponse(content={"format": "agent-time-machine-export-v1", "run": run,
-                                    "checkpoints": [store.checkpoint(c["id"]) for c in run["checkpoints"]]},
+        parent = store.run(run["parent_id"]) if run.get("parent_id") else None
+        related = store.proposals(parent["id"] if parent else run_id)
+        proposal_id = (run.get("patch") or {}).get("provenance", {}).get("proposal_id")
+        payload = {"format": "agent-time-machine-export-v1", "run": run,
+                   "checkpoints": [store.checkpoint(c["id"]) for c in run["checkpoints"]],
+                   "parent": parent, "proposals": related,
+                   "proposal": store.proposal(proposal_id) if proposal_id else None,
+                   "fork_checkpoint": store.checkpoint(run["fork_checkpoint_id"]) if run.get("fork_checkpoint_id") else None}
+        relevant_ids = {run_id, parent["id"] if parent else run_id}
+        payload["model_calls"] = [call for call in store.calls() if call["run_id"] in relevant_ids]
+        safe_payload = redact_credentials(payload)
+        if safe_payload != payload:
+            safe_payload["credential_redaction_applied"] = True
+            safe_payload["restoration_notice"] = "Redacted checkpoint source may not match its original checksum; do not bypass validation."
+        return JSONResponse(content=safe_payload,
                             headers={"Content-Disposition": f'attachment; filename="{run_id}.json"'})
 
     @app.get("/api/runs/{run_id}/compare")
@@ -146,6 +164,10 @@ def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI
         return engine.branch(run_id, body.checkpoint_id, {"tool": body.tool, "arguments": body.arguments},
                              body.continuation, body.proposal_id)
 
+    @app.post("/api/runs/{run_id}/restarts", status_code=201)
+    def restart_run(run_id: str, body: NewRestart):
+        return engine.restart(run_id, body.checkpoint_id)
+
     @app.post("/api/runs/{run_id}/replay", status_code=201)
     def replay_run(run_id: str):
         return engine.replay(run_id)
@@ -153,6 +175,14 @@ def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI
     @app.post("/api/runs/{run_id}/proposals", status_code=201)
     def propose(run_id: str, body: NewProposal):
         return engine.propose(run_id, body.checkpoint_id)
+
+    @app.get("/api/runs/{run_id}/proposals")
+    def proposal_history(run_id: str):
+        return redact_credentials(store.proposals(run_id))
+
+    @app.get("/api/proposals/{proposal_id}")
+    def get_proposal(proposal_id: str):
+        return redact_credentials(store.proposal(proposal_id))
 
     @app.get("/api/checkpoints/{checkpoint_id}")
     def get_checkpoint(checkpoint_id: str):
@@ -166,7 +196,7 @@ def create_app(database: Path | str | None = None, seed: bool = True) -> FastAPI
     @app.get("/api/model-calls")
     def model_calls():
         calls = store.calls()
-        return {"calls": calls, "usage": aggregate_usage(calls),
+        return {"calls": redact_credentials(calls), "usage": aggregate_usage(calls),
                 "scope": "Every attempted provider request, including failed proposals and branches. No hidden reasoning."}
 
     dist = ROOT / "dist"
