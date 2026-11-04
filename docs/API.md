@@ -11,6 +11,7 @@ The server is intended for loopback use and has no production authentication.
 | GET | `/api/scenarios` | Scenario catalog |
 | GET | `/api/runs` | Saved summaries, newest first |
 | POST | `/api/runs` | Execute and save an original run |
+| POST | `/api/experiments` | Compare a baseline with one instruction change under the supervised coding policy |
 | GET | `/api/runs/{id}` | Full run, checks, events, checkpoint summaries |
 | GET | `/api/runs/{id}/export` | Redacted run, lineage, checkpoints, proposals and model evidence |
 | GET | `/api/runs/{id}/compare` | Branch versus parent and integrity evidence |
@@ -39,6 +40,19 @@ Execution is synchronous and can take several model calls.
 
 **HTTP 201 means a record was created, not that the candidate succeeded.**
 Inspect `execution`, `outcome`, `verification`, and any recorded error.
+
+## Compare runs
+
+The Playground calls `POST /api/runs` twice with the same `scenario_id` and modes
+`deterministic_demo` and `live_meta`. Each run has its own saved ID, outcomes, and
+usage. The live mode uses the configured Meta key. The deterministic mode uses
+local tools with zero model requests.
+
+For a supervised prompt experiment, send `POST /api/experiments` with
+`scenario_id: "coding-date-parser"` and a nonempty `variant_instruction`.
+The baseline and variant both run live with the same protected tests. The
+response includes a summary for each arm, blocked-action counts, and the
+supervisor assessment. Supervisor calls count toward each run's allowance.
 
 ## Manual branch
 
